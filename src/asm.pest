@@ -1,0 +1,29 @@
+WHITESPACE = _{ " " | NEWLINE }
+COMMENT = _{
+    ("//" ~ (!NEWLINE ~ ANY)*) |
+    (";" ~ (!NEWLINE ~ ANY)*) |
+    ("/*" ~ (!"*/" ~ ANY)* ~ "*/")
+}
+
+code = { SOI ~ instr* ~ EOI }
+
+instr = { instr_ident ~ instr_arg* }
+block = { "{" ~ instr* ~ "}" }
+instr_arg = _{ nat | s_reg | c_reg | block | slice }
+
+instr_ident = ${ ASCII_ALPHANUMERIC+ }
+
+s_reg = ${ "s" ~ s_reg_id }
+s_reg_id = @{ ASCII_DIGIT+ | ( "(" ~ s_reg_neg_id ~ ")" ) }
+s_reg_neg_id = @{ "-" ~ ASCII_DIGIT+ }
+
+c_reg = ${ "c" ~ c_reg_id }
+c_reg_id = { ASCII_DIGIT+ }
+
+nat = @{ "-"? ~ (("0x" ~ ASCII_ALPHANUMERIC+) | ("0b" ~ ASCII_ALPHANUMERIC+) | ASCII_DIGIT+) }
+
+slice = { bin_slice | hex_slice }
+bin_slice = { "b{" ~ bin_slice_content ~ "}" }
+bin_slice_content = { (ASCII_ALPHANUMERIC | "_")* }
+hex_slice = { "x{" ~ hex_slice_content ~ "}" }
+hex_slice_content = { (ASCII_ALPHANUMERIC | "_")* }

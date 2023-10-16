@@ -32,13 +32,12 @@ impl<'a> Code<'a> {
     pub fn assemble_ext(self, context: &mut dyn CellContext) -> Result<Cell, AsmError> {
         let cell_context = &mut Cell::empty_context();
         let opcodes = cp0();
-        let builder = self.assemble_block(opcodes, &self.ast, context)?;
+        let builder = Self::assemble_block(opcodes, &self.ast, context)?;
         let cell = builder.build_ext(cell_context)?;
         Ok(cell)
     }
 
     fn assemble_block(
-        &self,
         opcodes: &Opcodes,
         items: &[ast::Instr<'_>],
         cell_context: &mut dyn CellContext,
@@ -48,13 +47,12 @@ impl<'a> Code<'a> {
             cell_context,
         };
         for item in items {
-            self.assemble_instr(opcodes, &mut ctx, item)?;
+            Self::assemble_instr(opcodes, &mut ctx, item)?;
         }
         ctx.into_builder()
     }
 
     fn assemble_instr(
-        &self,
         opcodes: &Opcodes,
         ctx: &mut Context<'_>,
         instr: &ast::Instr<'_>,
@@ -335,6 +333,26 @@ impl FromInstrArg<'_> for CReg {
     }
 }
 
+struct SliceOrCont(Cell);
+
+impl FromInstrArg<'_> for SliceOrCont {
+    fn from_instr_arg(arg: &'_ ast::InstrArg<'_>) -> Result<Self, AsmError> {
+        match &arg.value {
+            ast::InstrArgValue::Slice(cell) => Ok(Self(cell.clone())),
+            ast::InstrArgValue::Block(items) => {
+                let cell_context = &mut Cell::empty_context();
+                let opcodes = cp0();
+                let builder = Code::assemble_block(opcodes, items, cell_context)?;
+                builder
+                    .build_ext(cell_context)
+                    .map(Self)
+                    .map_err(AsmError::StoreError)
+            }
+            _ => Err(AsmError::UnexpectedArg),
+        }
+    }
+}
+
 fn cp0() -> &'static Opcodes {
     static OPCODES: OnceLock<Opcodes> = OnceLock::new();
     OPCODES.get_or_init(|| {
@@ -404,6 +422,12 @@ fn register_stackops(t: &mut Opcodes) {
             $($t.insert(
                 $names,
                 op_3sr_adj::<$base, { (stringify!($base).len() - 2) as u16 * 4 }, $adj>,
+            ));+
+        };
+        (@args $t:ident $($names:literal)|+ $base:literal ref) => {
+            $($t.insert(
+                $names,
+                op_1ref::<$base, { (stringify!($base).len() - 2) as u16 * 4 }>,
             ));+
         };
     }
@@ -537,6 +561,12 @@ fn register_stackops(t: &mut Opcodes) {
         "PUSHPOW2DEC" => 0x84(u8 - 1),
         "PUSHNEGPOW2" => 0x85(u8 - 1),
 
+        // Other constants
+        "PUSHREF" => 0x88(ref),
+        "PUSHREFSLICE" => 0x89(ref),
+        "PUSHREFCONT" => 0x8a(ref),
+        "PUSHSLICE" | "SLICE" => op_pushslice,
+
         // TODO: other
         "PUSHCTR" => 0xed4(c),
         "POPCTR" => 0xed5(c),
@@ -656,6 +686,10 @@ fn op_pushpow2(ctx: &mut Context<'_>, args: &[ast::InstrArg<'_>]) -> Result<(), 
     .map_err(AsmError::StoreError)
 }
 
+fn op_pushslice(ctx: &mut Context<'_>, args: &[ast::InstrArg<'_>]) -> Result<(), AsmError> {
+    todo!()
+}
+
 fn op_simple<const BASE: u32, const BITS: u16>(
     ctx: &mut Context<'_>,
     args: &[ast::InstrArg<'_>],
@@ -738,6 +772,14 @@ fn op_1cr<const BASE: u32, const BITS: u16>(
     write_op_1sr(ctx, BASE, BITS, c)
 }
 
+fn op_1ref<const BASE: u32, const BITS: u16>(
+    ctx: &mut Context<'_>,
+    args: &[ast::InstrArg<'_>],
+) -> Result<(), AsmError> {
+    let SliceOrCont(c) = args.parse()?;
+    write_op_1ref(ctx, BASE, BITS, c)
+}
+
 fn write_op(ctx: &mut Context<'_>, base: u32, bits: u16) -> Result<(), AsmError> {
     ctx.get_builder(bits)
         .store_uint(base as _, bits)
@@ -783,6 +825,12 @@ fn write_op_3sr(
     ctx.get_builder(bits + 12)
         .store_uint(((base << 12) | args) as _, bits + 12)
         .map_err(AsmError::StoreError)
+}
+
+fn write_op_1ref(ctx: &mut Context<'_>, base: u32, bits: u16, r: Cell) -> Result<(), AsmError> {
+    let (b, _) = ctx.get_builder_ext(bits, 1);
+    b.store_uint(base as _, bits)?;
+    b.store_reference(r).map_err(AsmError::StoreError)
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -871,7 +919,7 @@ mod tests {
 
     #[test]
     fn display() -> anyhow::Result<()> {
-        let code = Code::new("PUSHPOW2DEC 256")?.assemble()?;
+        let code = Code::new("PUSHREF x{123123}")?.assemble()?;
         println!("{}", code.display_tree());
         Ok(())
     }

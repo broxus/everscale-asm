@@ -22,8 +22,6 @@ c_reg_id = { ASCII_DIGIT+ }
 
 nat = @{ "-"? ~ (("0x" ~ ASCII_ALPHANUMERIC+) | ("0b" ~ ASCII_ALPHANUMERIC+) | ASCII_DIGIT+) }
 
-slice = { bin_slice | hex_slice }
-bin_slice = { "b{" ~ bin_slice_content ~ "}" }
-bin_slice_content = { (ASCII_ALPHANUMERIC | "_")* }
-hex_slice = { "x{" ~ hex_slice_content ~ "}" }
-hex_slice_content = { (ASCII_ALPHANUMERIC | "_")* }
+slice = { ("b{" ~ bin_slice ~ "}") | ("x{" ~ hex_slice ~ "}") }
+bin_slice = { (ASCII_ALPHANUMERIC | "_")* }
+hex_slice = { (ASCII_ALPHANUMERIC | "_")* }

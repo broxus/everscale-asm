@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+ahash = "0.8"
+either = "1.0"
 everscale-types = "0.1.0-rc.5"
 hex = "0.4"
 num-bigint = "0.4"
@@ -11,6 +13,9 @@ num-traits = "0.2"
 pest = "2.7"
 pest_derive = "2.7"
 thiserror = "1.0"
+
+[dev-dependencies]
+anyhow = "1.0"
 
 [patch.crates-io]
 everscale-types = { git = "https://github.com/broxus/everscale-types.git" }

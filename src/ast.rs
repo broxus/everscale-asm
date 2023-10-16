@@ -76,7 +76,7 @@ impl<'a> InstrArg<'a> {
 #[derive(Debug, Clone)]
 pub enum InstrArgValue<'a> {
     Nat(BigInt),
-    SReg(i8),
+    SReg(i16),
     CReg(u8),
     Slice(Cell),
     Block(Vec<Instr<'a>>),
@@ -140,18 +140,18 @@ fn parse_nat(mut s: &str) -> Result<BigInt, ParserError> {
     Ok(if negate { -number } else { number })
 }
 
-fn parse_s_reg(s: &str) -> Result<i8, ParserError> {
+fn parse_s_reg(s: &str) -> Result<i16, ParserError> {
     'err: {
         if let Some(rest) = s.strip_prefix("(-") {
             let Some(rest) = rest.strip_suffix(')') else {
                 break 'err;
             };
 
-            if let Ok(n) = rest.parse::<i8>() {
+            if let Ok(n) = rest.parse::<i16>() {
                 return Ok(-n);
             }
         } else {
-            if let Ok(n) = s.parse::<i8>() {
+            if let Ok(n) = s.parse::<i16>() {
                 return Ok(n);
             }
         }
@@ -327,6 +327,81 @@ mod tests {
         }
         DUP
         JMPX
+        "##;
+
+        let code = parse(CODE).unwrap();
+        println!("{code:#?}");
+    }
+
+    #[test]
+    fn wallet_v3() {
+        const CODE: &str = r##"
+        SETCP0 DUP IFNOTRET // return if recv_internal
+        DUP
+        PUSHINT 85143
+        EQUAL OVER
+        PUSHINT 78748
+        EQUAL OR
+        // "seqno" and "get_public_key" get-methods
+        IFJUMP {
+            PUSHINT 1
+            AND
+            PUSHCTR c4 CTOS
+            LDU 32
+            LDU 32
+            NIP
+            PLDU 256
+            CONDSEL
+        }
+        // fail unless recv_external
+        INC THROWIF 32
+
+        PUSHPOW2 9 LDSLICEX // signature
+        DUP
+        LDU 32 // subwallet_id
+        LDU 32 // valid_until
+        LDU 32 // msg_seqno
+
+        NOW
+        XCHG s1, s3
+        LEQ
+        THROWIF 35
+
+        PUSH c4 CTOS
+        LDU 32
+        LDU 32
+        LDU 256
+        ENDS
+
+        XCPU s3, s2
+        EQUAL
+        THROWIF 33
+
+        XCPU s4, s4
+        EQUAL
+        THROWIF 34
+
+        XCHG s0, s4
+        HASHSU
+        XC2PU s0, s5, s5
+        CHKSIGNU THROWIFNOT 35
+
+        ACCEPT
+
+        WHILE { DUP SREFS }, {
+            LDU 8
+            LDREF
+            XCHG s0, s2
+            SENDRAWMSG
+        }
+        ENDS SWAP INC
+
+        NEWC
+        STU 32
+        STU 32
+        STU 256
+        ENDC
+        POP c4
         "##;
 
         let code = parse(CODE).unwrap();

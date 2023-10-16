@@ -7,7 +7,7 @@ COMMENT = _{
 
 code = { SOI ~ instr* ~ EOI }
 
-instr = { instr_ident ~ instr_arg* }
+instr = { instr_ident ~ (instr_arg ~ ("," ~ instr_arg)*)? }
 block = { "{" ~ instr* ~ "}" }
 instr_arg = _{ nat | s_reg | c_reg | block | slice }
 

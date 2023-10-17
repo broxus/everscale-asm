@@ -5,8 +5,8 @@ use ahash::HashMap;
 use either::Either;
 use everscale_types::cell::{MAX_BIT_LEN, MAX_REF_COUNT};
 use everscale_types::prelude::*;
-use num_bigint::BigInt;
-use num_traits::ToPrimitive;
+use num_bigint::{BigInt, Sign};
+use num_traits::{One, ToPrimitive};
 
 use self::util::*;
 
@@ -715,6 +715,9 @@ fn register_stackops(t: &mut Opcodes) {
         "QFITSX" => 0xb7b600,
         "QUFITSX" => 0xb7b601,
 
+        // Advanced integer constants
+        "PUSHINTX" | "INTX" => op_pushintx,
+
         // TODO: other
         "PUSHCTR" => 0xed4(c),
         "POPCTR" => 0xed5(c),
@@ -785,7 +788,10 @@ fn op_pop(ctx: &mut Context<'_>, args: &[ast::InstrArg<'_>]) -> Result<(), AsmEr
 
 fn op_pushint(ctx: &mut Context<'_>, args: &[ast::InstrArg<'_>]) -> Result<(), AsmError> {
     let Nat(n) = args.parse()?;
+    write_pushint(ctx, n)
+}
 
+fn write_pushint(ctx: &mut Context<'_>, n: &BigInt) -> Result<(), AsmError> {
     if let Some(n) = n.to_i8() {
         if (-5..=10).contains(&n) {
             return ctx
@@ -832,6 +838,50 @@ fn op_pushpow2(ctx: &mut Context<'_>, args: &[ast::InstrArg<'_>]) -> Result<(), 
         _ => return Err(AsmError::OutOfRange),
     }
     .map_err(AsmError::StoreError)
+}
+
+fn op_pushintx(ctx: &mut Context<'_>, args: &[ast::InstrArg<'_>]) -> Result<(), AsmError> {
+    let Nat(n) = args.parse()?;
+    let bitsize = bitsize(n);
+
+    if bitsize <= 8 {
+        // NOTE: base=1 && pow2=0 case will be handled here
+        return op_pushint(ctx, args);
+    } else if bitsize > 257 {
+        return Err(AsmError::OutOfRange);
+    }
+
+    // NOTE: `n` is never zero at this point
+    let pow2 = n.trailing_zeros().unwrap();
+    let base = n >> pow2;
+    if base.magnitude().is_one() {
+        // NOTE: `pow2` is never zero at this point
+        let b = ctx.get_builder(16);
+        b.store_u8(if base.sign() == Sign::Plus {
+            0x83 // PUSHPOW2
+        } else {
+            0x85 // PUSHNEGPOW2
+        })?;
+        b.store_u8((pow2 - 1) as _).map_err(AsmError::StoreError)
+    } else if pow2 >= 20 {
+        // PUSHINT base
+        write_pushint(ctx, &base)?;
+        // LSHIFT# pow2
+        write_op_1sr_l(ctx, 0xaa, 8, (pow2 - 1) as _)
+    } else {
+        if pow2 == 0 {
+            let mut base = !n;
+            let pow2 = base.trailing_zeros().unwrap();
+            base >>= pow2;
+            if base.sign() == Sign::Minus && base.magnitude().is_one() {
+                // PUSHPOW2DEC
+                return write_op_1sr_l(ctx, 0x84, 8, (pow2 - 1) as _);
+            }
+        }
+
+        // Fallback to PUSHINT
+        write_pushint(ctx, n)
+    }
 }
 
 fn op_pushslice(ctx: &mut Context<'_>, args: &[ast::InstrArg<'_>]) -> Result<(), AsmError> {
@@ -1101,6 +1151,42 @@ mod tests {
 
         let cell_neg_max =
             Code::new("INT -0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")?
+                .assemble()?;
+        assert_eq!(
+            cell_neg_max.data(),
+            hex::decode("82f70000000000000000000000000000000000000000000000000000000000000001")?
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn pushintx() -> anyhow::Result<()> {
+        let cell_tiny = Code::new("INTX 7")?.assemble()?;
+        assert_eq!(cell_tiny.data(), &[0x77]);
+
+        let cell_byte = Code::new("INTX 120")?.assemble()?;
+        assert_eq!(cell_byte.data(), &[0x80, 120]);
+
+        let cell_short = Code::new("INTX 16000")?.assemble()?;
+        assert_eq!(
+            cell_short.data(),
+            &[0x81, ((16000 >> 8) & 0xff) as u8, ((16000) & 0xff) as u8]
+        );
+
+        let cell_big = Code::new("INTX 123123123123123123")?.assemble()?;
+        assert_eq!(cell_big.data(), hex::decode("8229b56bd40163f3b3")?);
+
+        let cell_big = Code::new("INTX 90596966400")?.assemble()?;
+        assert_eq!(cell_big.data(), hex::decode("8102a3aa1a")?);
+
+        let cell_max =
+            Code::new("INTX 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")?
+                .assemble()?;
+        assert_eq!(cell_max.data(), hex::decode("84ff")?);
+
+        let cell_neg_max =
+            Code::new("INTX -0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")?
                 .assemble()?;
         assert_eq!(
             cell_neg_max.data(),

@@ -1,18 +1,11 @@
-use std::sync::OnceLock;
-
 use everscale_types::error::Error;
 use everscale_types::prelude::CellBuilder;
-use num_bigint::{BigInt, BigUint, Sign};
+use num_bigint::{BigInt, Sign};
 use num_traits::{One, ToPrimitive, Zero};
 
 pub fn bitsize(int: &BigInt) -> u16 {
-    fn minus_one() -> &'static BigInt {
-        static MINUS_ONE: OnceLock<BigInt> = OnceLock::new();
-        MINUS_ONE.get_or_init(|| BigInt::from_biguint(Sign::Minus, BigUint::one()))
-    }
-
     let mut bits = int.bits() as u16;
-    if int.is_zero() || int == minus_one() {
+    if int.is_zero() || int.sign() == Sign::Minus && int.magnitude().is_one() {
         return 1;
     } else if int.sign() == Sign::Plus {
         return bits + 1;

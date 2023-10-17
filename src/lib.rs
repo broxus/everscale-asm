@@ -1065,6 +1065,11 @@ fn register_stackops(t: &mut Opcodes) {
         "BOOLEVAL" => 0xedf9,
         "SAMEALT" => 0xedfa,
         "SAMEALTSAVE" => 0xedfb,
+
+        // Dictionary subroutine call/jump primitives
+        "CALLVAR" => op_callvar,
+        "JMPVAR" => op_jmpvar,
+        "PREPAREVAR" => op_preparevar,
     });
 }
 
@@ -1125,7 +1130,7 @@ fn op_pop(ctx: &mut Context<'_>, args: &[ast::InstrArg<'_>]) -> Result<(), AsmEr
             0x10..=0xff => ctx.get_builder(16).store_u16(0x5700 | s1 as u16),
             _ => return Err(AsmError::InvalidRegister),
         },
-        Either::Right(CReg(c)) => ctx.get_builder(16).store_u16(0xed40 | c as u16),
+        Either::Right(CReg(c)) => ctx.get_builder(16).store_u16(0xed50 | c as u16),
     }
     .map_err(AsmError::StoreError)
 }
@@ -1324,6 +1329,26 @@ fn op_ifbitjmpref_impl<const INV: bool>(
     let (b, _) = ctx.get_builder_ext(16, 2);
     b.store_u16(0xe39c | (0x20 * INV as u16) | s as u16)?;
     b.store_reference(c).map_err(AsmError::StoreError)
+}
+
+fn op_callvar(ctx: &mut Context<'_>, args: &[ast::InstrArg<'_>]) -> Result<(), AsmError> {
+    // PUSH c3
+    op_preparevar(ctx, args)?;
+    // EXECUTE
+    write_op(ctx, 0xd8, 8)
+}
+
+fn op_jmpvar(ctx: &mut Context<'_>, args: &[ast::InstrArg<'_>]) -> Result<(), AsmError> {
+    // PUSH c3
+    op_preparevar(ctx, args)?;
+    // JMPX
+    write_op(ctx, 0xd9, 8)
+}
+
+fn op_preparevar(ctx: &mut Context<'_>, args: &[ast::InstrArg<'_>]) -> Result<(), AsmError> {
+    args.parse::<()>()?;
+    // PUSH c3
+    write_op_1sr(ctx, 0xed4, 12, 3)
 }
 
 fn op_simple<const BASE: u32, const BITS: u16>(

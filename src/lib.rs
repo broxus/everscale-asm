@@ -246,6 +246,24 @@ impl<'a> FromInstrArg<'a> for Nat<'a> {
     }
 }
 
+struct NatU2(u8);
+
+impl FromInstrArg<'_> for NatU2 {
+    fn from_instr_arg(arg: &ast::InstrArg<'_>) -> Result<Self, AsmError> {
+        match &arg.value {
+            ast::InstrArgValue::Nat(n) => {
+                if let Some(n) = n.to_u8() {
+                    if n <= 0b11 {
+                        return Ok(Self(n));
+                    }
+                }
+                Err(AsmError::OutOfRange)
+            }
+            _ => Err(AsmError::UnexpectedArg),
+        }
+    }
+}
+
 struct NatU4(u8);
 
 impl FromInstrArg<'_> for NatU4 {
@@ -556,10 +574,10 @@ fn register_stackops(t: &mut Opcodes) {
         "NULLSWAPIFNOT2" => 0x6fa5,
         "NULLROTRIF2" => 0x6fa6,
         "NULLROTRIFNOT2" => 0x6fa7,
-        // TODO: INDEX2
+        "INDEX2" => op_index2,
         "CADR" => 0x6fb4,
         "CDDR" => 0x6fb5,
-        // TODO: INDEX3
+        "INDEX3" => op_index3,
         "CADDR" => 0x6fd4,
         "CDDDR" => 0x6fd5,
 
@@ -837,6 +855,94 @@ fn register_stackops(t: &mut Opcodes) {
         "STZERO" => 0xcf81,
         "STONE" => 0xcf93,
 
+        // Cell deserialization (CellSlice primitives)
+        "CTOS" => 0xd0,
+        "ENDS" => 0xd1,
+        "LDI" => 0xd2(u8 - 1),
+        "LDU" => 0xd3(u8 - 1),
+        "LDREF" => 0xd4,
+        "LDREFRTOS" => 0xd5,
+        "LDSLICE" => 0xd6(u8 - 1),
+        "LDIX" => 0xd700,
+        "LDUX" => 0xd701,
+        "PLDIX" => 0xd702,
+        "PLDUX" => 0xd703,
+        "LDIXQ" => 0xd704,
+        "LDUXQ" => 0xd705,
+        "PLDIXQ" => 0xd706,
+        "PLDUXQ" => 0xd707,
+        "LDI_l" => 0xd708(u8 - 1),
+        "LDU_l" => 0xd709(u8 - 1),
+        "PLDI" => 0xd70a(u8 - 1),
+        "PLDU" => 0xd70b(u8 - 1),
+        "LDIQ" => 0xd70c(u8 - 1),
+        "LDUQ" => 0xd70d(u8 - 1),
+        "PLDIQ" => 0xd70e(u8 - 1),
+        "PLDUQ" => 0xd70f(u8 - 1),
+        // TODO: PLDUZ
+        "LDSLICEX" => 0xd718,
+        "PLDSLICEX" => 0xd719,
+        "LDSLICEXQ" => 0xd71a,
+        "PLDSLICEXQ" => 0xd71b,
+        "LDSLICE_l" => 0xd71c(u8 - 1),
+        "PLDSLICE" => 0xd71d(u8 - 1),
+        "LDSLICEQ" => 0xd71e(u8 - 1),
+        "PLDSLICEQ" => 0xd71f(u8 - 1),
+        "SDCUTFIRST" => 0xd720,
+        "SDSKIPFIRST" => 0xd721,
+        "SDCUTLAST" => 0xd722,
+        "SDSKIPLAST" => 0xd723,
+        "SDSUBSTR" => 0xd724,
+        "SDBEGINSX" => 0xd726,
+        "SDBEGINSXQ" => 0xd727,
+        // TODO: SDBEGINS:imm
+        // TODO: SDBEGINS
+        // TODO: SDBEGINSQ:imm
+        // TODO: SDBEGINSQ
+        "SCUTFIRST" => 0xd730,
+        "SSKIPFIRST" => 0xd731,
+        "SCUTLAST" => 0xd732,
+        "SSKIPLAST" => 0xd733,
+        "SUBSLICE" => 0xd734,
+        "SPLIT" => 0xd736,
+        "SPLITQ" => 0xd737,
+        "XCTOS" => 0xd739,
+        "XLOAD" => 0xd73a,
+        "XLOADQ" => 0xd73b,
+        "SCHKBITS" => 0xd741,
+        "SCHKREFS" => 0xd742,
+        "SCHKBITREFS" => 0xd743,
+        "SCHKBITSQ" => 0xd745,
+        "SCHKREFSQ" => 0xd746,
+        "SCHKBITREFSQ" => 0xd747,
+        "PLDREFVAR" => 0xd748,
+        "SBITS" => 0xd749,
+        "SREFS" => 0xd74a,
+        "SBITREFS" => 0xd74b,
+        "PLDREFIDX" => op_pldrefidx,
+        "PLDREF" => 0xd74c,
+        "LDILE4" => 0xd750,
+        "LDULE4" => 0xd751,
+        "LDILE8" => 0xd752,
+        "LDULE8" => 0xd753,
+        "PLDILE4" => 0xd754,
+        "PLDULE4" => 0xd755,
+        "PLDILE8" => 0xd756,
+        "PLDULE8" => 0xd757,
+        "LDILE4Q" => 0xd758,
+        "LDULE4Q" => 0xd759,
+        "LDILE8Q" => 0xd75a,
+        "LDULE8Q" => 0xd75b,
+        "PLDILE4Q" => 0xd75c,
+        "PLDULE4Q" => 0xd75d,
+        "PLDILE8Q" => 0xd75e,
+        "PLDULE8Q" => 0xd75f,
+        "LDZEROES" => 0xd760,
+        "LDONES" => 0xd761,
+        "LDSAME" => 0xd762,
+        "SDEPTH" => 0xd764,
+        "CDEPTH" => 0xd765,
+
         // TODO: other
         "PUSHCTR" => 0xed4(c),
         "POPCTR" => 0xed5(c),
@@ -903,6 +1009,19 @@ fn op_pop(ctx: &mut Context<'_>, args: &[ast::InstrArg<'_>]) -> Result<(), AsmEr
         Either::Right(CReg(c)) => ctx.get_builder(16).store_u16(0xed40 | c as u16),
     }
     .map_err(AsmError::StoreError)
+}
+
+fn op_index2(ctx: &mut Context<'_>, args: &[ast::InstrArg<'_>]) -> Result<(), AsmError> {
+    let (NatU2(s1), NatU2(s2)) = args.parse()?;
+    write_op_1sr_l(ctx, 0x6fb, 12, (s1 << 2) | s2)
+}
+
+fn op_index3(ctx: &mut Context<'_>, args: &[ast::InstrArg<'_>]) -> Result<(), AsmError> {
+    let (NatU2(s1), NatU2(s2), NatU2(s3)) = args.parse()?;
+    let args = (s1 << 4) | (s2 << 2) | s3;
+    ctx.get_builder(16)
+        .store_uint(0x6fc0 | args as u64, 16)
+        .map_err(AsmError::StoreError)
 }
 
 fn op_pushint(ctx: &mut Context<'_>, args: &[ast::InstrArg<'_>]) -> Result<(), AsmError> {
@@ -1043,6 +1162,13 @@ fn op_pushslice(ctx: &mut Context<'_>, args: &[ast::InstrArg<'_>]) -> Result<(),
         b.store_slice(c.as_slice()?)?;
         write_slice_padding(padding, b)
     }
+}
+
+fn op_pldrefidx(ctx: &mut Context<'_>, args: &[ast::InstrArg<'_>]) -> Result<(), AsmError> {
+    let NatU2(s) = args.parse()?;
+    ctx.get_builder(16)
+        .store_u16(0xd74c | s as u16)
+        .map_err(AsmError::StoreError)
 }
 
 fn op_simple<const BASE: u32, const BITS: u16>(

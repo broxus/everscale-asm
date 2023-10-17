@@ -438,6 +438,12 @@ fn register_stackops(t: &mut Opcodes) {
                 op_1ref::<$base, { (stringify!($base).len() - 2) as u16 * 4 }>,
             ));+
         };
+        (@args $t:ident $($names:literal)|+ $base:literal ref, ref) => {
+            $($t.insert(
+                $names,
+                op_2ref::<$base, { (stringify!($base).len() - 2) as u16 * 4 }>,
+            ));+
+        };
     }
 
     define_opcodes!(t, {
@@ -717,6 +723,119 @@ fn register_stackops(t: &mut Opcodes) {
 
         // Advanced integer constants
         "PUSHINTX" | "INTX" => op_pushintx,
+
+        // Integer comparison
+        "SGN" => 0xb8,
+        "LESS" => 0xb9,
+        "EQUAL" => 0xba,
+        "LEQ" => 0xbb,
+        "GREATER" => 0xbc,
+        "NEQ" => 0xbd,
+        "GEQ" => 0xbe,
+        "CMP" => 0xbf,
+        // TODO: EQINT
+        "ISZERO" => 0xc000,
+        // TODO: LESSINT
+        // TODO: LEQINT
+        "ISNEG" => 0xc100,
+        "ISNPOS" => 0xc101,
+        // TODO: GTINT,
+        // TODO: GEQINT,
+        "ISPOS" => 0xc200,
+        "ISNNEG" => 0xc2ff,
+        // TODO: NEQINT
+        "ISNZERO" => 0xc300,
+        "ISNAN" => 0xc4,
+        "CHKNAN" => 0xc5,
+
+        // Other comparison
+        "SEMPTY" => 0xc700,
+        "SDEMPTY" => 0xc701,
+        "SREMPTY" => 0xc702,
+        "SDFIRST" => 0xc703,
+        "SDLEXCMP" => 0xc704,
+        "SDEQ" => 0xc705,
+        "SDPFX" => 0xc708,
+        "SDPFXREV" => 0xc709,
+        "SDPPFX" => 0xc70a,
+        "SDPPFXREV" => 0xc70b,
+        "SDSFX" => 0xc70c,
+        "SDSFXREV" => 0xc70d,
+        "SDPSFX" => 0xc70e,
+        "SDPSFXREV" => 0xc70f,
+        "SDCNTLEAD0" => 0xc710,
+        "SDCNTLEAD1" => 0xc711,
+        "SDCNTTRAIL0" => 0xc712,
+        "SDCNTTRAIL1" => 0xc713,
+
+        // Cell serialization (Builder manipulation primitives)
+        "NEWC" => 0xc8,
+        "ENDC" => 0xc9,
+        "STI" => 0xca(u8 - 1),
+        "STU" => 0xcb(u8 - 1),
+        "STREF" => 0xcc,
+        "STBREFR" | "ENDCST" => 0xcd,
+        "STSLICE" => 0xce,
+        "STIX" => 0xcf00,
+        "STUX" => 0xcf01,
+        "STIXR" => 0xcf02,
+        "STUXR" => 0xcf03,
+        "STIXQ" => 0xcf04,
+        "STUXQ" => 0xcf05,
+        "STIXRQ" => 0xcf06,
+        "STUXRQ" => 0xcf07,
+        "STI_l" => 0xcf08(u8 - 1),
+        "STU_l" => 0xcf09(u8 - 1),
+        "STIR" => 0xcf0a(u8 - 1),
+        "STUR" => 0xcf0b(u8 - 1),
+        "STIQ" => 0xcf0c(u8 - 1),
+        "STUQ" => 0xcf0d(u8 - 1),
+        "STIRQ" => 0xcf0e(u8 - 1),
+        "STURQ" => 0xcf0f(u8 - 1),
+        "STREF_l" => 0xcf10,
+        "STBREF" => 0xcf11,
+        "STSLICE_l" => 0xcf12,
+        "STB" => 0xcf13,
+        "STREFR" => 0xcf14,
+        "STBREFR_l" => 0xcf15,
+        "STSLICER" => 0xcf16,
+        "STBR" | "BCONCAT" => 0xcf17,
+        "STREFQ" => 0xcf18,
+        "STBREFQ" => 0xcf19,
+        "STSLICEQ" => 0xcf1a,
+        "STBQ" => 0xcf1b,
+        "STREFRQ" => 0xcf1c,
+        "STBREFRQ" => 0xcf1d,
+        "STSLICERQ" => 0xcf1e,
+        "STBRQ" | "BCONCATQ" => 0xcf1f,
+        "STREFCONST" => 0xcf20(ref),
+        "STREF2CONST" => 0xcf21(ref, ref),
+        "ENDXC" => 0xcf23,
+        "STILE4" => 0xcf28,
+        "STULE4" => 0xcf29,
+        "STILE8" => 0xcf2a,
+        "STULE8" => 0xcf2b,
+        "BDEPTH" => 0xcf30,
+        "BBITS" => 0xcf31,
+        "BREFS" => 0xcf32,
+        "BBITREFS" => 0xcf33,
+        "BREMBITS" => 0xcf35,
+        "BREMREFS" => 0xcf36,
+        "BREMBITREFS" => 0xcf37,
+        "BCHKBITS#" => 0xcf38(u8 - 1),
+        "BCHKBITS" => 0xcf39,
+        "BCHKREFS" => 0xcf3a,
+        "BCHKBITREFS" => 0xcf3b,
+        "BCHKBITSQ#" => 0xcf3c(u8 - 1),
+        "BCHKBITSQ" => 0xcf3d,
+        "BCHKREFSQ" => 0xcf3e,
+        "BCHKBITREFSQ" => 0xcf3f,
+        "STZEROES" => 0xcf40,
+        "STONES" => 0xcf41,
+        "STSAME" => 0xcf42,
+        // TODO: STSLICECONST
+        "STZERO" => 0xcf81,
+        "STONE" => 0xcf93,
 
         // TODO: other
         "PUSHCTR" => 0xed4(c),
@@ -1016,6 +1135,14 @@ fn op_1ref<const BASE: u32, const BITS: u16>(
     write_op_1ref(ctx, BASE, BITS, c)
 }
 
+fn op_2ref<const BASE: u32, const BITS: u16>(
+    ctx: &mut Context<'_>,
+    args: &[ast::InstrArg<'_>],
+) -> Result<(), AsmError> {
+    let (SliceOrCont(c1), SliceOrCont(c2)) = args.parse()?;
+    write_op_2ref(ctx, BASE, BITS, c1, c2)
+}
+
 fn write_op(ctx: &mut Context<'_>, base: u32, bits: u16) -> Result<(), AsmError> {
     ctx.get_builder(bits)
         .store_uint(base as _, bits)
@@ -1067,6 +1194,19 @@ fn write_op_1ref(ctx: &mut Context<'_>, base: u32, bits: u16, r: Cell) -> Result
     let (b, _) = ctx.get_builder_ext(bits, 1);
     b.store_uint(base as _, bits)?;
     b.store_reference(r).map_err(AsmError::StoreError)
+}
+
+fn write_op_2ref(
+    ctx: &mut Context<'_>,
+    base: u32,
+    bits: u16,
+    r1: Cell,
+    r2: Cell,
+) -> Result<(), AsmError> {
+    let (b, _) = ctx.get_builder_ext(bits, 2);
+    b.store_uint(base as _, bits)?;
+    b.store_reference(r1)?;
+    b.store_reference(r2).map_err(AsmError::StoreError)
 }
 
 fn write_slice_padding(padding: u16, b: &mut CellBuilder) -> Result<(), AsmError> {

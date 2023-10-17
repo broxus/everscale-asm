@@ -11,7 +11,7 @@ instr = { instr_ident ~ (instr_arg ~ ("," ~ instr_arg)*)? }
 block = { "{" ~ instr* ~ "}" }
 instr_arg = _{ nat | s_reg | c_reg | block | slice }
 
-instr_ident = ${ ASCII_ALPHANUMERIC+ }
+instr_ident = ${ (ASCII_ALPHANUMERIC | "#" | "_")+ }
 
 s_reg = ${ "s" ~ s_reg_id }
 s_reg_id = @{ ASCII_DIGIT+ | ( "(" ~ s_reg_neg_id ~ ")" ) }

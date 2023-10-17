@@ -3,6 +3,7 @@ use std::sync::OnceLock;
 
 use ahash::HashMap;
 use either::Either;
+use everscale_types::cell::{MAX_BIT_LEN, MAX_REF_COUNT};
 use everscale_types::prelude::*;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
@@ -91,6 +92,13 @@ impl Context<'_> {
 
         let builder = self.stack.last_mut().unwrap();
         (builder, self.cell_context)
+    }
+
+    fn top_capacity(&self) -> (u16, u8) {
+        match self.stack.last() {
+            Some(last) => (last.spare_bits_capacity(), last.spare_refs_capacity()),
+            None => (MAX_BIT_LEN, MAX_REF_COUNT as u8),
+        }
     }
 
     fn merge_stack(
@@ -687,7 +695,45 @@ fn op_pushpow2(ctx: &mut Context<'_>, args: &[ast::InstrArg<'_>]) -> Result<(), 
 }
 
 fn op_pushslice(ctx: &mut Context<'_>, args: &[ast::InstrArg<'_>]) -> Result<(), AsmError> {
-    todo!()
+    const MAX_BITS_OVERHEAD: u16 = 26; // Longest prefix/padding
+
+    let SliceOrCont(c) = args.parse()?;
+    let bits = c.bit_len();
+    let refs = c.reference_count();
+
+    let (rem_bits, rem_refs) = ctx.top_capacity();
+    if bits + MAX_BITS_OVERHEAD > rem_bits || refs + 1 > rem_refs {
+        // Fallback to PUSHREFSLICE
+        let (b, _) = ctx.get_builder_ext(8, 1);
+        b.store_u8(0x89)?;
+        b.store_reference(c).map_err(AsmError::StoreError)
+    } else if bits <= 123 && refs == 0 {
+        let l = (bits + 4) / 8;
+        let padding = l * 8 + 4 - bits;
+        let (b, _) = ctx.get_builder_ext(8 + 4 + bits + padding, refs + 1);
+        b.store_u8(0x8b)?;
+        b.store_small_uint(l as u8, 4)?;
+        b.store_slice(c.as_slice()?)?;
+        write_slice_padding(padding, b)
+    } else if bits <= 248 && refs >= 1 {
+        let l = (bits + 7) / 8;
+        let padding = l * 8 + 1 - bits;
+        let (b, _) = ctx.get_builder_ext(8 + 2 + 5 + bits + padding, refs + 1);
+        b.store_u8(0x8c)?;
+        b.store_small_uint(refs - 1, 2)?;
+        b.store_small_uint(l as u8, 5)?;
+        b.store_slice(c.as_slice()?)?;
+        write_slice_padding(padding, b)
+    } else {
+        let l = (bits + 2) / 8;
+        let padding = l * 8 + 6 - bits;
+        let (b, _) = ctx.get_builder_ext(8 + 3 + 7 + bits + padding, refs + 1);
+        b.store_u8(0x8d)?;
+        b.store_small_uint(refs, 3)?;
+        b.store_small_uint(l as u8, 7)?;
+        b.store_slice(c.as_slice()?)?;
+        write_slice_padding(padding, b)
+    }
 }
 
 fn op_simple<const BASE: u32, const BITS: u16>(
@@ -833,6 +879,13 @@ fn write_op_1ref(ctx: &mut Context<'_>, base: u32, bits: u16, r: Cell) -> Result
     b.store_reference(r).map_err(AsmError::StoreError)
 }
 
+fn write_slice_padding(padding: u16, b: &mut CellBuilder) -> Result<(), AsmError> {
+    debug_assert!((1..=8).contains(&padding), "Invalid slice padding");
+    b.store_bit_one()?;
+    b.store_zeros(padding - 1)?;
+    Ok(())
+}
+
 #[derive(thiserror::Error, Debug)]
 pub enum AsmError {
     #[error("unknown opcode: {0}")]
@@ -919,7 +972,7 @@ mod tests {
 
     #[test]
     fn display() -> anyhow::Result<()> {
-        let code = Code::new("PUSHREF x{123123}")?.assemble()?;
+        let code = Code::new("PUSHSLICE x{6_}")?.assemble()?;
         println!("{}", code.display_tree());
         Ok(())
     }

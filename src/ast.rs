@@ -8,7 +8,6 @@ use pest::Parser;
 pub fn parse(s: &'_ str) -> Result<Vec<Instr<'_>>, ParserError> {
     let pairs = Grammar::parse(Rule::code, s)
         .map_err(|e| ParserError::InvalidInput(Box::new(e)))?
-        .into_iter()
         .next()
         .unwrap()
         .into_inner();
@@ -150,10 +149,8 @@ fn parse_s_reg(s: &str) -> Result<i16, ParserError> {
             if let Ok(n) = rest.parse::<i16>() {
                 return Ok(-n);
             }
-        } else {
-            if let Ok(n) = s.parse::<i16>() {
-                return Ok(n);
-            }
+        } else if let Ok(n) = s.parse::<i16>() {
+            return Ok(n);
         }
     }
 
@@ -284,6 +281,7 @@ impl From<pest::Span<'_>> for Span {
 #[grammar = "asm.pest"]
 pub struct Grammar;
 
+#[allow(clippy::enum_variant_names)]
 #[derive(thiserror::Error, Debug)]
 pub enum ParserError {
     #[error("invalid input: {0}")]
@@ -335,7 +333,7 @@ mod tests {
 
     #[test]
     fn wallet_v3() {
-        const CODE: &str = r##"
+        const CODE: &str = r#"
         SETCP0 DUP IFNOTRET // return if recv_internal
         DUP
         PUSHINT 85143
@@ -402,7 +400,7 @@ mod tests {
         STU 256
         ENDC
         POP c4
-        "##;
+        "#;
 
         let code = parse(CODE).unwrap();
         println!("{code:#?}");

@@ -282,6 +282,24 @@ impl FromInstrArg<'_> for NatU4 {
     }
 }
 
+struct NatU5(u8);
+
+impl FromInstrArg<'_> for NatU5 {
+    fn from_instr_arg(arg: &ast::InstrArg<'_>) -> Result<Self, AsmError> {
+        match &arg.value {
+            ast::InstrArgValue::Nat(n) => {
+                if let Some(n) = n.to_u8() {
+                    if n <= 0b11111 {
+                        return Ok(Self(n));
+                    }
+                }
+                Err(AsmError::OutOfRange)
+            }
+            _ => Err(AsmError::UnexpectedArg),
+        }
+    }
+}
+
 struct NatU8(u8);
 
 impl FromInstrArg<'_> for NatU8 {
@@ -943,9 +961,110 @@ fn register_stackops(t: &mut Opcodes) {
         "SDEPTH" => 0xd764,
         "CDEPTH" => 0xd765,
 
-        // TODO: other
+        // Continuation / Flow control primitives
+        "EXECUTE" | "CALLX" => 0xd8,
+        "JMPX" => 0xd9,
+        // TODO: CALLXARGS
+        "JMPXARGS" => 0xdb1(u4),
+        "RETARGS" => 0xdb2(u4),
+        "RET" | "RETTRUE" => 0xdb30,
+        "RETALT" | "RETFALSE" => 0xdb31,
+        "BRANCH" | "RETBOOL" => 0xdb32,
+        "CALLCC" => 0xdb34,
+        "JMPXDATA" => 0xdb35,
+        // TODO: CALLCCARGS
+        "CALLXVARARGS" => 0xdb38,
+        "RETVARARGS" => 0xdb39,
+        "JMPXVARARGS" => 0xdb3a,
+        "CALLCCVARARGS" => 0xdb3b,
+        "CALLREF" => 0xdb3c(ref),
+        "JMPREF" => 0xdb3d(ref),
+        "JMPREFDATA" => 0xdb3e(ref),
+        "RETDATA" => 0xdb3f,
+
+        // Conditional and iterated execution primitives
+        "IFRET" => 0xdc,
+        "IFNOTRET" => 0xdd,
+        "IF" => 0xde,
+        "IFNOT" => 0xdf,
+        "IFJMP" => 0xe0,
+        "IFNOTJMP" => 0xe1,
+        "IFELSE" => 0xe2,
+
+        "IFREF" => 0xe300(ref),
+        "IFNOTREF" => 0xe301(ref),
+        "IFJMPREF" => 0xe302(ref),
+        "IFNOTJMPREF" => 0xe303(ref),
+        "CONDSEL" => 0xe304,
+        "CONDSELCHK" => 0xe305,
+        "IFRETALT" => 0xe308,
+        "IFNOTRETALT" => 0xe309,
+        "IFREFELSE" => 0xe30d(ref),
+        "IFELSEREF" => 0xe30e(ref),
+        "IFREFELSEREF" => 0xe30f(ref, ref),
+
+        "REPEATBRK" => 0xe314,
+        "REPEATENDBRK" => 0xe315,
+        "UNTILBRK" => 0xe316,
+        "UNTILENDBRK" => 0xe317,
+        "WHILEBRK" => 0xe318,
+        "WHILEENDBRK" => 0xe319,
+        "AGAINBRK" => 0xe31a,
+        "AGAINENDBRK" => 0xe31b,
+
+        "IFBITJMP" => op_ifbitjmp,
+        "IFNBITJMP" => op_ifnbitjmp,
+        "IFBITJMPREF" => op_ifbitjmpref,
+        "IFNBITJMPREF" => op_ifnbitjmpref,
+
+        "REPEAT" => 0xe4,
+        "REPEATEND" => 0xe5,
+        "UNTIL" => 0xe6,
+        "UNTILEND" => 0xe7,
+        "WHILE" => 0xe8,
+        "WHILEEND" => 0xe9,
+        "AGAIN" => 0xea,
+        "AGAINEND" => 0xeb,
+
+        // Continuation stack manipulation and continuation creation
+        // TODO: SETCONTARGS
+        // TODO: SETNUMARGS
+        "RETURNARGS" => 0xed0(u4),
+        "RETURNVARARGS" => 0xed10,
+        "SETCONTVARARGS" => 0xed11,
+        "SETNUMVARARGS" => 0xed12,
+        "BLESS" => 0xed1e,
+        "BLESSVARARGS" => 0xed1f,
+        // TODO: BLESSARGS
+        // TODO: BLESSNUMARGS
+
+        // Control register and continuation savelist manipulation
         "PUSHCTR" => 0xed4(c),
+        "PUSHROOT" => 0xed44,
         "POPCTR" => 0xed5(c),
+        "POPROOT" => 0xed54,
+        "SETCONTCTR" | "SETCONT" => 0xed6(c),
+        "SETRETCTR" => 0xed7(c),
+        "SETALTCTR" => 0xed8(c),
+        "POPSAVE" | "POPCTRSAVE" => 0xed9(c),
+        "SAVE" | "SAVECTR" => 0xeda(c),
+        "SAVEALT" | "SAVEALTCTR" => 0xedb(c),
+        "SAVEBOTH" | "SAVEBOTHCTR" => 0xedc(c),
+        "PUSHCTRX" => 0xede0,
+        "POPCTRX" => 0xede1,
+        "SETCONTCTRX" => 0xede2,
+        "BOOLAND" | "COMPOS" => 0xedf0,
+        "BOOLOR" | "COMPOSALT" => 0xedf1,
+        "COMPOSBOTH" => 0xedf2,
+        "ATEXIT" => 0xedf3,
+        "ATEXITALT" => 0xedf4,
+        "SETEXITALT" => 0xedf5,
+        "THENRET" => 0xedf6,
+        "THENRETALT" => 0xedf7,
+        "INVERT" => 0xedf8,
+        "BOOLEVAL" => 0xedf9,
+        "SAMEALT" => 0xedfa,
+        "SAMEALTSAVE" => 0xedfb,
     });
 }
 
@@ -1132,7 +1251,7 @@ fn op_pushslice(ctx: &mut Context<'_>, args: &[ast::InstrArg<'_>]) -> Result<(),
     let (rem_bits, rem_refs) = ctx.top_capacity();
     if bits + MAX_BITS_OVERHEAD > rem_bits || refs + 1 > rem_refs {
         // Fallback to PUSHREFSLICE
-        let (b, _) = ctx.get_builder_ext(8, 1);
+        let (b, _) = ctx.get_builder_ext(8, 2);
         b.store_u8(0x89)?;
         b.store_reference(c).map_err(AsmError::StoreError)
     } else if bits <= 123 && refs == 0 {
@@ -1169,6 +1288,42 @@ fn op_pldrefidx(ctx: &mut Context<'_>, args: &[ast::InstrArg<'_>]) -> Result<(),
     ctx.get_builder(16)
         .store_u16(0xd74c | s as u16)
         .map_err(AsmError::StoreError)
+}
+
+fn op_ifbitjmp(ctx: &mut Context<'_>, args: &[ast::InstrArg<'_>]) -> Result<(), AsmError> {
+    op_ifbitjmp_impl::<false>(ctx, args)
+}
+
+fn op_ifnbitjmp(ctx: &mut Context<'_>, args: &[ast::InstrArg<'_>]) -> Result<(), AsmError> {
+    op_ifbitjmp_impl::<true>(ctx, args)
+}
+
+fn op_ifbitjmp_impl<const INV: bool>(
+    ctx: &mut Context<'_>,
+    args: &[ast::InstrArg<'_>],
+) -> Result<(), AsmError> {
+    let NatU5(s) = args.parse()?;
+    ctx.get_builder(16)
+        .store_u16(0xe380 | (0x20 * INV as u16) | s as u16)
+        .map_err(AsmError::StoreError)
+}
+
+fn op_ifbitjmpref(ctx: &mut Context<'_>, args: &[ast::InstrArg<'_>]) -> Result<(), AsmError> {
+    op_ifbitjmpref_impl::<false>(ctx, args)
+}
+
+fn op_ifnbitjmpref(ctx: &mut Context<'_>, args: &[ast::InstrArg<'_>]) -> Result<(), AsmError> {
+    op_ifbitjmpref_impl::<true>(ctx, args)
+}
+
+fn op_ifbitjmpref_impl<const INV: bool>(
+    ctx: &mut Context<'_>,
+    args: &[ast::InstrArg<'_>],
+) -> Result<(), AsmError> {
+    let (NatU5(s), SliceOrCont(c)) = args.parse()?;
+    let (b, _) = ctx.get_builder_ext(16, 2);
+    b.store_u16(0xe39c | (0x20 * INV as u16) | s as u16)?;
+    b.store_reference(c).map_err(AsmError::StoreError)
 }
 
 fn op_simple<const BASE: u32, const BITS: u16>(
@@ -1317,7 +1472,7 @@ fn write_op_3sr(
 }
 
 fn write_op_1ref(ctx: &mut Context<'_>, base: u32, bits: u16, r: Cell) -> Result<(), AsmError> {
-    let (b, _) = ctx.get_builder_ext(bits, 1);
+    let (b, _) = ctx.get_builder_ext(bits, 2);
     b.store_uint(base as _, bits)?;
     b.store_reference(r).map_err(AsmError::StoreError)
 }
@@ -1329,7 +1484,7 @@ fn write_op_2ref(
     r1: Cell,
     r2: Cell,
 ) -> Result<(), AsmError> {
-    let (b, _) = ctx.get_builder_ext(bits, 2);
+    let (b, _) = ctx.get_builder_ext(bits, 3);
     b.store_uint(base as _, bits)?;
     b.store_reference(r1)?;
     b.store_reference(r2).map_err(AsmError::StoreError)

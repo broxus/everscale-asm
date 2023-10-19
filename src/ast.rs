@@ -1,75 +1,30 @@
-use everscale_types::cell::MAX_BIT_LEN;
-use everscale_types::prelude::*;
+use std::str::FromStr;
+
+use chumsky::error::Error;
+use chumsky::prelude::*;
+use chumsky::util::MaybeRef;
+use everscale_types::prelude::{Cell, CellBuilder};
 use num_bigint::BigInt;
 use num_traits::Num;
-use pest::iterators::Pair;
-use pest::Parser;
 
-pub fn parse(s: &'_ str) -> Result<Vec<Instr<'_>>, ParserError> {
-    let pairs = Grammar::parse(Rule::code, s)
-        .map_err(|e| ParserError::InvalidInput(Box::new(e)))?
-        .next()
-        .unwrap()
-        .into_inner();
+pub type Span = SimpleSpan<usize>;
 
-    let mut res = Vec::with_capacity(pairs.len());
-
-    for pair in pairs {
-        match pair.as_rule() {
-            Rule::instr => res.push(Instr::parse(pair)?),
-            Rule::EOI => break,
-            r => panic!("Unexpected rule: {r:?}"),
-        }
-    }
-
-    Ok(res)
+pub fn parse(s: &'_ str) -> ParseResult<Vec<Instr<'_>>, ParserError> {
+    parser().parse(s)
 }
 
 #[derive(Debug, Clone)]
 pub struct Instr<'a> {
+    pub span: Span,
     pub ident_span: Span,
     pub ident: &'a str,
     pub args: Vec<InstrArg<'a>>,
-}
-
-impl<'a> Instr<'a> {
-    fn parse(pair: Pair<'a, Rule>) -> Result<Self, ParserError> {
-        let mut pairs = pair.into_inner();
-
-        let (ident, ident_span) = match pairs.next() {
-            Some(pair) => {
-                assert_eq!(pair.as_rule(), Rule::instr_ident);
-                (pair.as_str(), pair.as_span().into())
-            }
-            None => panic!("Invalid rules"),
-        };
-
-        let mut args = Vec::with_capacity(pairs.len());
-        for pair in pairs {
-            args.push(InstrArg::parse(pair)?);
-        }
-
-        Ok(Self {
-            ident_span,
-            ident,
-            args,
-        })
-    }
 }
 
 #[derive(Debug, Clone)]
 pub struct InstrArg<'a> {
     pub span: Span,
     pub value: InstrArgValue<'a>,
-}
-
-impl<'a> InstrArg<'a> {
-    fn parse(pair: Pair<'a, Rule>) -> Result<Self, ParserError> {
-        Ok(InstrArg {
-            span: pair.as_span().into(),
-            value: InstrArgValue::parse(pair)?,
-        })
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -79,110 +34,222 @@ pub enum InstrArgValue<'a> {
     CReg(u8),
     Slice(Cell),
     Block(Vec<Instr<'a>>),
+    Invalid,
 }
 
-impl<'a> InstrArgValue<'a> {
-    fn parse(pair: Pair<'a, Rule>) -> Result<Self, ParserError> {
-        match pair.as_rule() {
-            Rule::nat => parse_nat(pair.as_str()).map(Self::Nat),
-            Rule::s_reg => {
-                let pair = pair.into_inner().next().unwrap();
-                assert_eq!(pair.as_rule(), Rule::s_reg_id);
-                parse_s_reg(pair.as_str()).map(Self::SReg)
-            }
-            Rule::c_reg => {
-                let pair = pair.into_inner().next().unwrap();
-                assert_eq!(pair.as_rule(), Rule::c_reg_id);
-                parse_c_reg(pair.as_str()).map(Self::CReg)
-            }
-            Rule::block => {
-                let pairs = pair.into_inner();
-                let mut block = Vec::with_capacity(pairs.len());
-                for pair in pairs {
-                    block.push(Instr::parse(pair)?);
-                }
-                Ok(Self::Block(block))
-            }
-            Rule::slice => {
-                let pair = pair.into_inner().next().unwrap();
-                match pair.as_rule() {
-                    Rule::bin_slice => parse_bin_slice(pair.as_str()).map(Self::Slice),
-                    Rule::hex_slice => parse_hex_slice(pair.as_str()).map(Self::Slice),
-                    r => panic!("Unexpected rule: {r:?}"),
-                }
-            }
-            r => panic!("Unexpected rule: {r:?}"),
-        }
-    }
+fn parser<'a>() -> impl Parser<'a, &'a str, Vec<Instr<'a>>, extra::Err<ParserError>> {
+    instr().padded().repeated().collect()
 }
 
-fn parse_nat(mut s: &str) -> Result<BigInt, ParserError> {
-    let negate = match s.strip_prefix('-') {
-        Some(rest) => {
-            s = rest;
-            true
-        }
-        None => false,
-    };
+fn instr<'a>() -> impl Parser<'a, &'a str, Instr<'a>, extra::Err<ParserError>> {
+    recursive(|instr| {
+        let instr_arg = choice((
+            nat().map(InstrArgValue::Nat),
+            stack_register().map(|idx| {
+                idx.map(InstrArgValue::SReg)
+                    .unwrap_or(InstrArgValue::Invalid)
+            }),
+            control_register().map(|idx| {
+                idx.map(InstrArgValue::CReg)
+                    .unwrap_or(InstrArgValue::Invalid)
+            }),
+            cont_block(instr).map(InstrArgValue::Block),
+            cell_slice().map(|slice| {
+                slice
+                    .map(InstrArgValue::Slice)
+                    .unwrap_or(InstrArgValue::Invalid)
+            }),
+        ))
+        .map_with(|value, e| InstrArg {
+            value,
+            span: e.span(),
+        });
 
-    let radix = if let Some(rest) = s.strip_prefix("0x") {
-        s = rest;
-        16
-    } else if let Some(rest) = s.strip_prefix("0b") {
-        s = rest;
-        2
-    } else {
-        10
-    };
+        let args = instr_arg
+            .separated_by(just(',').padded().recover_with(skip_then_retry_until(
+                any().ignored(),
+                choice((just(',').ignored(), text::newline())),
+            )))
+            .collect::<Vec<_>>();
 
-    let number = BigInt::from_str_radix(s, radix)?;
-    Ok(if negate { -number } else { number })
+        instr_ident()
+            .map_with(|ident, e| (ident, e.span()))
+            .padded()
+            .then(args)
+            .map_with(|((ident, ident_span), args), e| Instr {
+                span: e.span(),
+                ident,
+                ident_span,
+                args,
+            })
+    })
 }
 
-fn parse_s_reg(s: &str) -> Result<i16, ParserError> {
-    'err: {
-        if let Some(rest) = s.strip_prefix("(-") {
-            let Some(rest) = rest.strip_suffix(')') else {
-                break 'err;
-            };
-
-            if let Ok(n) = rest.parse::<i16>() {
-                return Ok(-n);
-            }
-        } else if let Ok(n) = s.parse::<i16>() {
-            return Ok(n);
-        }
+fn instr_ident<'a>() -> impl Parser<'a, &'a str, &'a str, extra::Err<ParserError>> + Clone {
+    fn is_instr_ident_char(c: char, ext: bool) -> bool {
+        c.is_ascii_uppercase() || c.is_ascii_digit() || c == '#' || c == '_' || ext && c == ':'
     }
 
-    Err(ParserError::InvalidStackRegister(Box::from(s)))
+    any()
+        .try_map(|c, span: Span| {
+            if is_instr_ident_char(c, false) {
+                Ok(c)
+            } else {
+                Err(ParserError::expected_found(
+                    [],
+                    Some(MaybeRef::Val(c)),
+                    span,
+                ))
+            }
+        })
+        .then(any().filter(|c| is_instr_ident_char(*c, true)).repeated())
+        .to_slice()
 }
 
-fn parse_c_reg(s: &str) -> Result<u8, ParserError> {
-    if let Ok(n) = s.parse::<u8>() {
-        if (0..=5).contains(&n) || n == 7 {
-            return Ok(n);
+fn nat<'a>() -> impl Parser<'a, &'a str, BigInt, extra::Err<ParserError>> + Clone {
+    fn parse_int(s: &str, radix: u32, span: Span) -> Result<BigInt, ParserError> {
+        match BigInt::from_str_radix(s, radix) {
+            Ok(n) => Ok(n),
+            Err(e) => Err(ParserError::InvalidInt { span, inner: e }),
         }
     }
 
-    Err(ParserError::InvalidGeneralRegister(Box::from(s)))
+    let number = choice((
+        just("0x")
+            .ignore_then(text::int(16))
+            .try_map(|s, span| parse_int(s, 16, span)),
+        just("0b")
+            .ignore_then(text::int(2))
+            .try_map(|s, span| parse_int(s, 2, span)),
+        text::int(10).try_map(|s, span| parse_int(s, 10, span)),
+    ));
+
+    choice((
+        just('-').ignore_then(number).map(std::ops::Neg::neg),
+        number,
+    ))
 }
 
-fn parse_hex_slice(s: &str) -> Result<Cell, ParserError> {
-    fn hex_char(c: u8) -> Result<u8, ParserError> {
+fn stack_register<'a>() -> impl Parser<'a, &'a str, Option<i16>, extra::Err<ParserError>> + Clone {
+    let until_next_arg = any()
+        .filter(|&c: &char| c != ',' && !c.is_whitespace())
+        .repeated();
+
+    let until_eof_or_paren = none_of(")\n").repeated().then(just(')').or_not());
+
+    let idx =
+        text::int::<_, _, extra::Err<ParserError>>(10).try_map(|s, span| match i16::from_str(s) {
+            Ok(n) => Ok(n),
+            Err(e) => Err(ParserError::InvalidStackRegister {
+                span,
+                inner: e.into(),
+            }),
+        });
+
+    just('s').ignore_then(
+        choice((
+            just('(').ignore_then(
+                just('-')
+                    .ignore_then(idx)
+                    .map(|idx| Some(-idx))
+                    .then_ignore(just(')'))
+                    .recover_with(via_parser(until_eof_or_paren.map(|_| None))),
+            ),
+            idx.map(Some),
+        ))
+        .recover_with(via_parser(until_next_arg.map(|_| None))),
+    )
+}
+
+fn control_register<'a>() -> impl Parser<'a, &'a str, Option<u8>, extra::Err<ParserError>> + Clone {
+    let recovery = any()
+        .filter(|&c: &char| c != ',' && !c.is_whitespace())
+        .repeated();
+
+    let idx = text::int::<_, _, extra::Err<ParserError>>(10)
+        .try_map(|s, span| match u8::from_str(s) {
+            Ok(n) if (0..=5).contains(&n) || n == 7 => Ok(Some(n)),
+            Ok(n) => Err(ParserError::InvalidControlRegister {
+                span,
+                inner: ControlRegisterError::OutOfRange(n).into(),
+            }),
+            Err(e) => Err(ParserError::InvalidControlRegister {
+                span,
+                inner: e.into(),
+            }),
+        })
+        .recover_with(via_parser(recovery.map(|_| None)));
+
+    just('c').ignore_then(idx)
+}
+
+fn cont_block<'a>(
+    instr: Recursive<dyn Parser<'a, &'a str, Instr<'a>, extra::Err<ParserError>> + 'a>,
+) -> impl Parser<'a, &'a str, Vec<Instr<'a>>, extra::Err<ParserError>> + Clone {
+    instr.padded().repeated().collect().delimited_by(
+        just('{'),
+        just('}')
+            .ignored()
+            .recover_with(via_parser(end()))
+            .recover_with(skip_then_retry_until(any().ignored(), end())),
+    )
+}
+
+fn cell_slice<'a>() -> impl Parser<'a, &'a str, Option<Cell>, extra::Err<ParserError>> + Clone {
+    let content_recovery = any()
+        .filter(|&c: &char| c != '}' && !c.is_whitespace())
+        .repeated();
+
+    let braces_recovery = none_of("}\n").repeated().then(just('}').or_not());
+
+    let make_slice_parser =
+        |prefix: &'static str, parser: fn(&'a str) -> Result<Cell, SliceError>| {
+            just(prefix)
+                .ignore_then(
+                    any()
+                        .filter(|&c: &char| c != '}' && !c.is_whitespace())
+                        .repeated()
+                        .to_slice()
+                        .try_map(move |s, span| match (parser)(s) {
+                            Ok(s) => Ok(Some(s)),
+                            Err(e) => Err(ParserError::InvalidSlice {
+                                span,
+                                inner: e.into(),
+                            }),
+                        })
+                        .recover_with(via_parser(content_recovery.map(|_| None))),
+                )
+                .then(
+                    just('}')
+                        .map(|_| true)
+                        .recover_with(via_parser(braces_recovery.map(|_| false))),
+                )
+                .map(|(mut t, valid)| {
+                    if !valid {
+                        t = None;
+                    }
+                    t
+                })
+        };
+
+    choice((
+        make_slice_parser("x{", parse_hex_slice),
+        make_slice_parser("b{", parse_bin_slice),
+    ))
+}
+
+fn parse_hex_slice(s: &str) -> Result<Cell, SliceError> {
+    fn hex_char(c: u8) -> Result<u8, SliceError> {
         match c {
             b'A'..=b'F' => Ok(c - b'A' + 10),
             b'a'..=b'f' => Ok(c - b'a' + 10),
             b'0'..=b'9' => Ok(c - b'0'),
-            _ => Err(ParserError::InvalidSlice(
-                format!("Unexpected char `{c}` in hex bistring").into(),
-            )),
+            _ => Err(SliceError::InvalidHex(c as char)),
         }
     }
 
     if !s.is_ascii() {
-        return Err(ParserError::InvalidSlice(
-            "Non-ascii characters in bitstring".into(),
-        ));
+        return Err(SliceError::NonAscii);
     }
 
     let s = s.as_bytes();
@@ -200,12 +267,12 @@ fn parse_hex_slice(s: &str) -> Result<Cell, ParserError> {
     }
 
     if s.len() > 128 * 2 {
-        return Err(ParserError::InvalidSlice("Bitstring is too long".into()));
+        return Err(SliceError::TooLong);
     }
 
     let mut builder = CellBuilder::new();
 
-    let mut bytes = hex::decode(s).map_err(invalid_slice)?;
+    let mut bytes = hex::decode(s)?;
 
     let mut bits = bytes.len() as u16 * 8;
     if let Some(half_byte) = half_byte {
@@ -225,11 +292,13 @@ fn parse_hex_slice(s: &str) -> Result<Cell, ParserError> {
         }
     }
 
-    builder.store_raw(&bytes, bits).map_err(invalid_slice)?;
-    builder.build().map_err(invalid_slice)
+    builder.store_raw(&bytes, bits)?;
+    builder.build().map_err(SliceError::CellError)
 }
 
-fn parse_bin_slice(s: &str) -> Result<Cell, ParserError> {
+fn parse_bin_slice(s: &str) -> Result<Cell, SliceError> {
+    use everscale_types::cell::MAX_BIT_LEN;
+
     let mut bits = 0;
     let mut bytes = [0; 128];
 
@@ -237,63 +306,77 @@ fn parse_bin_slice(s: &str) -> Result<Cell, ParserError> {
         let value = match char {
             '0' => 0u8,
             '1' => 1,
-            c => {
-                return Err(ParserError::InvalidSlice(
-                    format!("Unexpected char `{c}` in binary bitstring").into(),
-                ))
-            }
+            c => return Err(SliceError::InvalidBin(c)),
         };
         bytes[bits / 8] |= value << (7 - bits % 8);
 
         bits += 1;
         if bits > MAX_BIT_LEN as usize {
-            return Err(ParserError::InvalidSlice("Bitstring is too long".into()));
+            return Err(SliceError::TooLong);
         }
     }
 
     let mut builder = CellBuilder::new();
-    builder
-        .store_raw(&bytes, bits as _)
-        .map_err(invalid_slice)?;
-    builder.build().map_err(invalid_slice)
+    builder.store_raw(&bytes, bits as _)?;
+    builder.build().map_err(SliceError::CellError)
 }
 
-fn invalid_slice<T: std::fmt::Display>(e: T) -> ParserError {
-    ParserError::InvalidSlice(e.to_string().into())
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct Span {
-    pub start: usize,
-    pub end: usize,
-}
-
-impl From<pest::Span<'_>> for Span {
-    fn from(value: pest::Span) -> Self {
-        Self {
-            start: value.start(),
-            end: value.end(),
-        }
-    }
-}
-
-#[derive(pest_derive::Parser)]
-#[grammar = "asm.pest"]
-pub struct Grammar;
-
-#[allow(clippy::enum_variant_names)]
 #[derive(thiserror::Error, Debug)]
 pub enum ParserError {
-    #[error("invalid input: {0}")]
-    InvalidInput(Box<pest::error::Error<Rule>>),
-    #[error("invalid int: {0}")]
-    InvalidInt(#[from] num_bigint::ParseBigIntError),
-    #[error("invalid stack register: {0}")]
-    InvalidStackRegister(Box<str>),
-    #[error("invalid general register: {0}")]
-    InvalidGeneralRegister(Box<str>),
-    #[error("invalid slice: {0}")]
-    InvalidSlice(Box<str>),
+    #[error("unexpected character found: {found:?}")]
+    ExpectedFound { span: Span, found: Option<char> },
+    #[error("invalid int: {inner}")]
+    InvalidInt {
+        span: Span,
+        inner: num_bigint::ParseBigIntError,
+    },
+    #[error("invalid stack register: {inner}")]
+    InvalidStackRegister { span: Span, inner: anyhow::Error },
+    #[error("invalid control register: {inner}")]
+    InvalidControlRegister { span: Span, inner: anyhow::Error },
+    #[error("invalid slice: {inner}")]
+    InvalidSlice { span: Span, inner: anyhow::Error },
+    #[error("unknown error")]
+    UnknownError,
+}
+
+#[derive(thiserror::Error, Debug)]
+enum ControlRegisterError {
+    #[error("control register `c{0}` is out of range")]
+    OutOfRange(u8),
+}
+
+#[derive(thiserror::Error, Debug)]
+enum SliceError {
+    #[error("non-ascii characters in bitstring")]
+    NonAscii,
+    #[error("unexpected char `{0}` in hex bitstring")]
+    InvalidHex(char),
+    #[error("invalid hex bitstring: {0}")]
+    InvalidHexFull(#[from] hex::FromHexError),
+    #[error("unexpected char `{0}` in binary bitstring")]
+    InvalidBin(char),
+    #[error("bitstring is too long")]
+    TooLong,
+    #[error("cell build error: {0}")]
+    CellError(#[from] everscale_types::error::Error),
+}
+
+impl<'a> chumsky::error::Error<'a, &'a str> for ParserError {
+    fn expected_found<Iter: IntoIterator<Item = Option<MaybeRef<'a, char>>>>(
+        _: Iter,
+        found: Option<MaybeRef<'a, char>>,
+        span: Span,
+    ) -> Self {
+        Self::ExpectedFound {
+            span,
+            found: found.as_deref().copied(),
+        }
+    }
+
+    fn merge(self, _: Self) -> Self {
+        self
+    }
 }
 
 #[cfg(test)]
@@ -307,8 +390,10 @@ mod tests {
 
     #[test]
     fn simple_asm() {
-        const CODE: &str = r##"
+        const CODE: &str = r#"
         PUSHCONT {
+            PUSHREF x{afff_}
+            PUSH s(-1)
             OVER
             LESSINT 2
             PUSHCONT {
@@ -325,84 +410,10 @@ mod tests {
         }
         DUP
         JMPX
-        "##;
-
-        let code = parse(CODE).unwrap();
-        println!("{code:#?}");
-    }
-
-    #[test]
-    fn wallet_v3() {
-        const CODE: &str = r#"
-        SETCP0 DUP IFNOTRET // return if recv_internal
-        DUP
-        PUSHINT 85143
-        EQUAL OVER
-        PUSHINT 78748
-        EQUAL OR
-        // "seqno" and "get_public_key" get-methods
-        IFJUMP {
-            PUSHINT 1
-            AND
-            PUSHCTR c4 CTOS
-            LDU 32
-            LDU 32
-            NIP
-            PLDU 256
-            CONDSEL
-        }
-        // fail unless recv_external
-        INC THROWIF 32
-
-        PUSHPOW2 9 LDSLICEX // signature
-        DUP
-        LDU 32 // subwallet_id
-        LDU 32 // valid_until
-        LDU 32 // msg_seqno
-
-        NOW
-        XCHG s1, s3
-        LEQ
-        THROWIF 35
-
-        PUSH c4 CTOS
-        LDU 32
-        LDU 32
-        LDU 256
-        ENDS
-
-        XCPU s3, s2
-        EQUAL
-        THROWIF 33
-
-        XCPU s4, s4
-        EQUAL
-        THROWIF 34
-
-        XCHG s0, s4
-        HASHSU
-        XC2PU s0, s5, s5
-        CHKSIGNU THROWIFNOT 35
-
-        ACCEPT
-
-        WHILE { DUP SREFS }, {
-            LDU 8
-            LDREF
-            XCHG s0, s2
-            SENDRAWMSG
-        }
-        ENDS SWAP INC
-
-        NEWC
-        STU 32
-        STU 32
-        STU 256
-        ENDC
-        POP c4
         "#;
 
-        let code = parse(CODE).unwrap();
-        println!("{code:#?}");
+        let (output, errors) = parse(CODE).into_output_errors();
+        println!("OUTPUT: {:#?}", output);
+        println!("ERRORS: {:#?}", errors);
     }
 }

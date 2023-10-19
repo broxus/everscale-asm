@@ -65,6 +65,9 @@ impl Backend {
 #[async_trait]
 impl LanguageServer for Backend {
     async fn initialize(&self, _: InitializeParams) -> Result<InitializeResult> {
+        let state = self.state.clone();
+        tokio::spawn(async move { state.process_jobs().await });
+
         Ok(InitializeResult {
             server_info: None,
             capabilities: ServerCapabilities {
@@ -178,7 +181,7 @@ impl BackendState {
         while let Some(job) = receiver.recv().await {
             tracing::debug!(?job, "processing job");
             match job {
-                Job::ComputeDiagnostics(path) => {
+                Job::ComputeDiagnostics(_path) => {
                     let req_token = ProgressToken::Number(
                         self.progress_id.fetch_add(1, Ordering::Release) as i32,
                     );

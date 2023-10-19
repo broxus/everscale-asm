@@ -6,7 +6,7 @@ mod util;
 
 pub struct Code<'a> {
     text: &'a str,
-    ast: Option<Vec<ast::Instr<'a>>>,
+    ast: Option<ast::Code<'a>>,
     parser_errors: Vec<ast::ParserError>,
 }
 
@@ -28,10 +28,11 @@ impl<'a> Code<'a> {
 
     pub fn try_into_valid(self) -> Result<ValidCode<'a>, ast::ParserError> {
         if self.parser_errors.is_empty() {
-            if let Some(ast) = self.ast {
+            if let Some(ast::Code { items, span }) = self.ast {
                 return Ok(ValidCode {
                     _text: self.text,
-                    ast,
+                    span,
+                    ast: items,
                 });
             }
         }
@@ -50,12 +51,13 @@ impl<'a> Code<'a> {
 
 pub struct ValidCode<'a> {
     _text: &'a str,
+    span: ast::Span,
     ast: Vec<ast::Instr<'a>>,
 }
 
 impl ValidCode<'_> {
     pub fn assemble(self) -> Result<Cell, asm::AsmError> {
-        asm::assemble(&self.ast)
+        asm::assemble(&self.ast, self.span)
     }
 }
 

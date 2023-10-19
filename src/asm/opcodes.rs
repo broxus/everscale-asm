@@ -4,6 +4,7 @@ use std::sync::OnceLock;
 use ahash::HashMap;
 use either::Either;
 use everscale_types::cell::{MAX_BIT_LEN, MAX_REF_COUNT};
+use everscale_types::error::Error;
 use everscale_types::prelude::*;
 use num_bigint::{BigInt, Sign};
 use num_traits::{One, ToPrimitive};
@@ -25,13 +26,16 @@ impl Context {
 
     pub fn add_instr(&mut self, opcodes: &Opcodes, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
         let Some(handler) = opcodes.get(instr.ident) else {
-            return Err(AsmError::UnknownOpcode(instr.ident.into()));
+            return Err(AsmError::UnknownOpcode {
+                name: instr.ident.into(),
+                span: instr.ident_span,
+            });
         };
-        (handler)(self, &instr.args)
+        (handler)(self, instr)
     }
 
-    pub fn into_builder(self) -> Result<CellBuilder, AsmError> {
-        Self::merge_stack(self.stack)
+    pub fn into_builder(self, block_span: ast::Span) -> Result<CellBuilder, AsmError> {
+        Self::merge_stack(self.stack, block_span)
     }
 
     fn get_builder(&mut self, bits: u16) -> &mut CellBuilder {
@@ -58,16 +62,20 @@ impl Context {
         }
     }
 
-    fn merge_stack(mut stack: Vec<CellBuilder>) -> Result<CellBuilder, AsmError> {
+    fn merge_stack(
+        mut stack: Vec<CellBuilder>,
+        block_span: ast::Span,
+    ) -> Result<CellBuilder, AsmError> {
         let cell_context = &mut Cell::empty_context();
         let mut result = None::<CellBuilder>;
         while let Some(mut last) = stack.pop() {
             if let Some(child) = result.take() {
                 if last.has_capacity(child.bit_len(), child.reference_count()) {
-                    last.store_slice(child.as_full_slice())?;
+                    last.store_slice(child.as_full_slice())
                 } else {
-                    last.store_reference(child.build_ext(cell_context)?)?;
+                    last.store_reference(child.build_ext(cell_context).with_span(block_span)?)
                 }
+                .with_span(block_span)?;
             }
             result = Some(last);
         }
@@ -77,7 +85,7 @@ impl Context {
 }
 
 pub type Opcodes = HashMap<&'static str, OpcodeHandlerFn>;
-pub type OpcodeHandlerFn = fn(&mut Context, &[ast::InstrArg<'_>]) -> Result<(), AsmError>;
+pub type OpcodeHandlerFn = fn(&mut Context, &ast::Instr<'_>) -> Result<(), AsmError>;
 
 pub fn cp0() -> &'static Opcodes {
     static OPCODES: OnceLock<Opcodes> = OnceLock::new();
@@ -755,12 +763,15 @@ fn register_stackops(t: &mut Opcodes) {
     });
 }
 
-fn op_xchg(ctx: &mut Context, args: &[ast::InstrArg<'_>]) -> Result<(), AsmError> {
+fn op_xchg(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
     const SREG_RANGE: std::ops::RangeInclusive<i16> = 0x00..=0xff;
 
-    let (FullSReg(mut s1), FullSReg(mut s2)) = args.parse()?;
-    if !SREG_RANGE.contains(&s1) || !SREG_RANGE.contains(&s2) {
-        return Err(AsmError::InvalidRegister);
+    let (FullSReg(mut s1, s1_span), FullSReg(mut s2, s2_span)) = instr.parse_args()?;
+    if !SREG_RANGE.contains(&s1) {
+        return Err(AsmError::InvalidRegister(s1_span));
+    }
+    if !SREG_RANGE.contains(&s2) {
+        return Err(AsmError::InvalidRegister(s2_span));
     }
 
     match s1.cmp(&s2) {
@@ -769,130 +780,147 @@ fn op_xchg(ctx: &mut Context, args: &[ast::InstrArg<'_>]) -> Result<(), AsmError
         Ordering::Less => {}
     }
 
-    match (s1, s2) {
-        (0, 0x1..=0xf) => ctx.get_builder(8).store_u8(s2 as u8),
-        (0, 0x10..=0xff) => ctx.get_builder(16).store_u16(0x1100 | s2 as u16),
-        (1, 0x2..=0xf) => ctx.get_builder(8).store_u8(0x10 | s2 as u8),
-        (0x2..=0xf, 0x2..=0xf) => ctx
-            .get_builder(16)
-            .store_u16(0x1000 | ((s1 as u16) << 4) | (s2 as u16)),
-        (0x2..=0xf, 0x10..=0xff) => {
-            let b = ctx.get_builder(8 + 16 + 8);
-            b.store_u8(s1 as u8)?;
-            b.store_u16(0x1100 | s2 as u16)?;
-            b.store_u8(s1 as u8)
+    fn write_xchg(ctx: &mut Context, s1: i16, s2: i16) -> Result<(), Error> {
+        match (s1, s2) {
+            (0, 0x1..=0xf) => ctx.get_builder(8).store_u8(s2 as u8),
+            (0, 0x10..=0xff) => ctx.get_builder(16).store_u16(0x1100 | s2 as u16),
+            (1, 0x2..=0xf) => ctx.get_builder(8).store_u8(0x10 | s2 as u8),
+            (0x2..=0xf, 0x2..=0xf) => ctx
+                .get_builder(16)
+                .store_u16(0x1000 | ((s1 as u16) << 4) | (s2 as u16)),
+            (0x2..=0xf, 0x10..=0xff) => {
+                let b = ctx.get_builder(8 + 16 + 8);
+                b.store_u8(s1 as u8)?;
+                b.store_u16(0x1100 | s2 as u16)?;
+                b.store_u8(s1 as u8)
+            }
+            (0x10..=0xff, 0x10..=0xff) => {
+                let b = ctx.get_builder(16 * 3);
+                b.store_u16(0x1100 | s1 as u16)?;
+                b.store_u16(0x1100 | s2 as u16)?;
+                b.store_u16(0x1100 | s1 as u16)
+            }
+            _ => Ok(()),
         }
-        (0x10..=0xff, 0x10..=0xff) => {
-            let b = ctx.get_builder(16 * 3);
-            b.store_u16(0x1100 | s1 as u16)?;
-            b.store_u16(0x1100 | s2 as u16)?;
-            b.store_u16(0x1100 | s1 as u16)
-        }
-        _ => Ok(()),
     }
-    .map_err(AsmError::StoreError)
+
+    write_xchg(ctx, s1, s2).with_span(instr.span)
 }
 
-fn op_push(ctx: &mut Context, args: &[ast::InstrArg<'_>]) -> Result<(), AsmError> {
-    match args.parse()? {
-        Either::Left(FullSReg(s1)) => match s1 {
+fn op_push(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
+    match instr.parse_args()? {
+        Either::Left(FullSReg(s1, s1_span)) => match s1 {
             0x0..=0xf => ctx.get_builder(8).store_u8(0x20 | s1 as u8),
             0x10..=0xff => ctx.get_builder(16).store_u16(0x5600 | s1 as u16),
-            _ => return Err(AsmError::InvalidRegister),
+            _ => return Err(AsmError::InvalidRegister(s1_span)),
         },
         Either::Right(CReg(c)) => ctx.get_builder(16).store_u16(0xed40 | c as u16),
     }
-    .map_err(AsmError::StoreError)
+    .with_span(instr.span)
 }
 
-fn op_pop(ctx: &mut Context, args: &[ast::InstrArg<'_>]) -> Result<(), AsmError> {
-    match args.parse()? {
-        Either::Left(FullSReg(s1)) => match s1 {
+fn op_pop(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
+    match instr.parse_args()? {
+        Either::Left(FullSReg(s1, s1_span)) => match s1 {
             0x0..=0xf => ctx.get_builder(8).store_u8(0x30 | s1 as u8),
             0x10..=0xff => ctx.get_builder(16).store_u16(0x5700 | s1 as u16),
-            _ => return Err(AsmError::InvalidRegister),
+            _ => return Err(AsmError::InvalidRegister(s1_span)),
         },
         Either::Right(CReg(c)) => ctx.get_builder(16).store_u16(0xed50 | c as u16),
     }
-    .map_err(AsmError::StoreError)
+    .with_span(instr.span)
 }
 
-fn op_index2(ctx: &mut Context, args: &[ast::InstrArg<'_>]) -> Result<(), AsmError> {
-    let (NatU2(s1), NatU2(s2)) = args.parse()?;
-    write_op_1sr_l(ctx, 0x6fb, 12, (s1 << 2) | s2)
+fn op_index2(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
+    let (NatU2(s1), NatU2(s2)) = instr.parse_args()?;
+    write_op_1sr_l(ctx, 0x6fb, 12, (s1 << 2) | s2).with_span(instr.span)
 }
 
-fn op_index3(ctx: &mut Context, args: &[ast::InstrArg<'_>]) -> Result<(), AsmError> {
-    let (NatU2(s1), NatU2(s2), NatU2(s3)) = args.parse()?;
+fn op_index3(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
+    let (NatU2(s1), NatU2(s2), NatU2(s3)) = instr.parse_args()?;
     let args = (s1 << 4) | (s2 << 2) | s3;
     ctx.get_builder(16)
         .store_uint(0x6fc0 | args as u64, 16)
-        .map_err(AsmError::StoreError)
+        .with_span(instr.span)
 }
 
-fn op_pushint(ctx: &mut Context, args: &[ast::InstrArg<'_>]) -> Result<(), AsmError> {
-    let Nat(n) = args.parse()?;
-    write_pushint(ctx, n)
+fn op_pushint(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
+    let WithSpan(Nat(n), nat_span) = instr.parse_args()?;
+    write_pushint(ctx, instr.span, nat_span, n)
 }
 
-fn write_pushint(ctx: &mut Context, n: &BigInt) -> Result<(), AsmError> {
+fn write_pushint(
+    ctx: &mut Context,
+    instr_span: ast::Span,
+    nat_span: ast::Span,
+    n: &BigInt,
+) -> Result<(), AsmError> {
     if let Some(n) = n.to_i8() {
         if (-5..=10).contains(&n) {
             return ctx
                 .get_builder(8)
                 .store_u8(0x70 | (n as u8) & 0xf)
-                .map_err(AsmError::StoreError);
+                .with_span(instr_span);
         }
     }
 
     let bitsize = bitsize(n);
-    if bitsize <= 8 {
-        let b = ctx.get_builder(16);
-        b.store_u8(0x80)?;
-        store_int_to_builder(b, n, 8)
-    } else if bitsize <= 16 {
-        let b = ctx.get_builder(24);
-        b.store_u8(0x81)?;
-        store_int_to_builder(b, n, 16)
-    } else {
-        if bitsize > 257 {
-            return Err(AsmError::OutOfRange);
-        }
-        let l = (bitsize + 4) / 8;
-        let value_bits = 3 + l * 8;
-        let b = ctx.get_builder(13 + value_bits);
-        b.store_u8(0x82)?;
-        b.store_small_uint((l - 2) as u8, 5)?;
-        store_int_to_builder(b, n, value_bits)
+    if bitsize > 257 {
+        return Err(AsmError::OutOfRange(nat_span));
     }
-    .map_err(AsmError::StoreError)
+
+    fn write_pushint_impl(ctx: &mut Context, n: &BigInt, bitsize: u16) -> Result<(), Error> {
+        if bitsize <= 8 {
+            let b = ctx.get_builder(16);
+            b.store_u8(0x80)?;
+            store_int_to_builder(b, n, 8)
+        } else if bitsize <= 16 {
+            let b = ctx.get_builder(24);
+            b.store_u8(0x81)?;
+            store_int_to_builder(b, n, 16)
+        } else {
+            let l = (bitsize + 4) / 8;
+            let value_bits = 3 + l * 8;
+            let b = ctx.get_builder(13 + value_bits);
+            b.store_u8(0x82)?;
+            b.store_small_uint((l - 2) as u8, 5)?;
+            store_int_to_builder(b, n, value_bits)
+        }
+    }
+
+    write_pushint_impl(ctx, n, bitsize).with_span(instr_span)
 }
 
-fn op_pushpow2(ctx: &mut Context, args: &[ast::InstrArg<'_>]) -> Result<(), AsmError> {
-    let Nat(n) = args.parse()?;
+fn op_pushpow2(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
+    let WithSpan(Nat(n), span) = instr.parse_args()?;
 
     match n.to_u16().unwrap_or(u16::MAX) {
         0 => ctx.get_builder(8).store_u8(0x71),
         n @ 1..=255 => {
             let b = ctx.get_builder(16);
-            b.store_u8(0x83)?;
+            b.store_u8(0x83).with_span(instr.span)?;
             b.store_u8((n - 1) as _)
         }
-        256 => return Err(AsmError::WrongUsage("use PUSHNAN instead of PUSHPOW2 256")),
-        _ => return Err(AsmError::OutOfRange),
+        256 => {
+            return Err(AsmError::WrongUsage {
+                details: "use PUSHNAN instead of PUSHPOW2 256",
+                span,
+            })
+        }
+        _ => return Err(AsmError::OutOfRange(span)),
     }
-    .map_err(AsmError::StoreError)
+    .with_span(instr.span)
 }
 
-fn op_pushintx(ctx: &mut Context, args: &[ast::InstrArg<'_>]) -> Result<(), AsmError> {
-    let Nat(n) = args.parse()?;
+fn op_pushintx(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
+    let WithSpan(Nat(n), span) = instr.parse_args()?;
     let bitsize = bitsize(n);
 
     if bitsize <= 8 {
         // NOTE: base=1 && pow2=0 case will be handled here
-        return op_pushint(ctx, args);
+        return op_pushint(ctx, instr);
     } else if bitsize > 257 {
-        return Err(AsmError::OutOfRange);
+        return Err(AsmError::OutOfRange(span));
     }
 
     // NOTE: `n` is never zero at this point
@@ -905,13 +933,14 @@ fn op_pushintx(ctx: &mut Context, args: &[ast::InstrArg<'_>]) -> Result<(), AsmE
             0x83 // PUSHPOW2
         } else {
             0x85 // PUSHNEGPOW2
-        })?;
-        b.store_u8((pow2 - 1) as _).map_err(AsmError::StoreError)
+        })
+        .with_span(instr.span)?;
+        b.store_u8((pow2 - 1) as _).with_span(instr.span)
     } else if pow2 >= 20 {
         // PUSHINT base
-        write_pushint(ctx, &base)?;
+        write_pushint(ctx, instr.span, span, &base)?;
         // LSHIFT# pow2
-        write_op_1sr_l(ctx, 0xaa, 8, (pow2 - 1) as _)
+        write_op_1sr_l(ctx, 0xaa, 8, (pow2 - 1) as _).with_span(instr.span)
     } else {
         if pow2 == 0 {
             let mut base = !n;
@@ -919,247 +948,248 @@ fn op_pushintx(ctx: &mut Context, args: &[ast::InstrArg<'_>]) -> Result<(), AsmE
             base >>= pow2;
             if base.sign() == Sign::Minus && base.magnitude().is_one() {
                 // PUSHPOW2DEC
-                return write_op_1sr_l(ctx, 0x84, 8, (pow2 - 1) as _);
+                return write_op_1sr_l(ctx, 0x84, 8, (pow2 - 1) as _).with_span(instr.span);
             }
         }
 
         // Fallback to PUSHINT
-        write_pushint(ctx, n)
+        write_pushint(ctx, instr.span, span, n)
     }
 }
 
-fn op_pushslice(ctx: &mut Context, args: &[ast::InstrArg<'_>]) -> Result<(), AsmError> {
+fn op_pushslice(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
     const MAX_BITS_OVERHEAD: u16 = 26; // Longest prefix/padding
 
-    let c = args.parse::<SliceOrCont>()?.into_cell()?;
-    let bits = c.bit_len();
-    let refs = c.reference_count();
+    let c = instr.parse_args::<SliceOrCont>()?.into_cell()?;
 
-    let (rem_bits, rem_refs) = ctx.top_capacity();
-    if bits + MAX_BITS_OVERHEAD > rem_bits || refs + 1 > rem_refs {
-        // Fallback to PUSHREFSLICE
-        let b = ctx.get_builder_ext(8, 2);
-        b.store_u8(0x89)?;
-        b.store_reference(c).map_err(AsmError::StoreError)
-    } else if bits <= 123 && refs == 0 {
-        let l = (bits + 4) / 8;
-        let padding = l * 8 + 4 - bits;
-        let b = ctx.get_builder_ext(8 + 4 + bits + padding, refs + 1);
-        b.store_u8(0x8b)?;
-        b.store_small_uint(l as u8, 4)?;
-        b.store_slice(c.as_slice()?)?;
-        write_slice_padding(padding, b)
-    } else if bits <= 248 && refs >= 1 {
-        let l = (bits + 7) / 8;
-        let padding = l * 8 + 1 - bits;
-        let b = ctx.get_builder_ext(8 + 2 + 5 + bits + padding, refs + 1);
-        b.store_u8(0x8c)?;
-        b.store_small_uint(refs - 1, 2)?;
-        b.store_small_uint(l as u8, 5)?;
-        b.store_slice(c.as_slice()?)?;
-        write_slice_padding(padding, b)
-    } else {
-        let l = (bits + 2) / 8;
-        let padding = l * 8 + 6 - bits;
-        let b = ctx.get_builder_ext(8 + 3 + 7 + bits + padding, refs + 1);
-        b.store_u8(0x8d)?;
-        b.store_small_uint(refs, 3)?;
-        b.store_small_uint(l as u8, 7)?;
-        b.store_slice(c.as_slice()?)?;
-        write_slice_padding(padding, b)
+    fn write_pushslice(ctx: &mut Context, c: Cell) -> Result<(), Error> {
+        let bits = c.bit_len();
+        let refs = c.reference_count();
+
+        let (rem_bits, rem_refs) = ctx.top_capacity();
+        if bits + MAX_BITS_OVERHEAD > rem_bits || refs + 1 > rem_refs {
+            // Fallback to PUSHREFSLICE
+            let b = ctx.get_builder_ext(8, 2);
+            b.store_u8(0x89)?;
+            b.store_reference(c)
+        } else if bits <= 123 && refs == 0 {
+            let l = (bits + 4) / 8;
+            let padding = l * 8 + 4 - bits;
+            let b = ctx.get_builder_ext(8 + 4 + bits + padding, refs + 1);
+            b.store_u8(0x8b)?;
+            b.store_small_uint(l as u8, 4)?;
+            b.store_slice(c.as_slice()?)?;
+            write_slice_padding(padding, b)
+        } else if bits <= 248 && refs >= 1 {
+            let l = (bits + 7) / 8;
+            let padding = l * 8 + 1 - bits;
+            let b = ctx.get_builder_ext(8 + 2 + 5 + bits + padding, refs + 1);
+            b.store_u8(0x8c)?;
+            b.store_small_uint(refs - 1, 2)?;
+            b.store_small_uint(l as u8, 5)?;
+            b.store_slice(c.as_slice()?)?;
+            write_slice_padding(padding, b)
+        } else {
+            let l = (bits + 2) / 8;
+            let padding = l * 8 + 6 - bits;
+            let b = ctx.get_builder_ext(8 + 3 + 7 + bits + padding, refs + 1);
+            b.store_u8(0x8d)?;
+            b.store_small_uint(refs, 3)?;
+            b.store_small_uint(l as u8, 7)?;
+            b.store_slice(c.as_slice()?)?;
+            write_slice_padding(padding, b)
+        }
     }
+
+    write_pushslice(ctx, c).with_span(instr.span)
 }
 
-fn op_pldrefidx(ctx: &mut Context, args: &[ast::InstrArg<'_>]) -> Result<(), AsmError> {
-    let NatU2(s) = args.parse()?;
+fn op_pldrefidx(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
+    let NatU2(s) = instr.parse_args()?;
     ctx.get_builder(16)
         .store_u16(0xd74c | s as u16)
-        .map_err(AsmError::StoreError)
+        .with_span(instr.span)
 }
 
-fn op_ifbitjmp(ctx: &mut Context, args: &[ast::InstrArg<'_>]) -> Result<(), AsmError> {
-    op_ifbitjmp_impl::<false>(ctx, args)
+fn op_ifbitjmp(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
+    op_ifbitjmp_impl::<false>(ctx, instr)
 }
 
-fn op_ifnbitjmp(ctx: &mut Context, args: &[ast::InstrArg<'_>]) -> Result<(), AsmError> {
-    op_ifbitjmp_impl::<true>(ctx, args)
+fn op_ifnbitjmp(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
+    op_ifbitjmp_impl::<true>(ctx, instr)
 }
 
 fn op_ifbitjmp_impl<const INV: bool>(
     ctx: &mut Context,
-    args: &[ast::InstrArg<'_>],
+    instr: &ast::Instr<'_>,
 ) -> Result<(), AsmError> {
-    let NatU5(s) = args.parse()?;
+    let NatU5(s) = instr.parse_args()?;
     ctx.get_builder(16)
         .store_u16(0xe380 | (0x20 * INV as u16) | s as u16)
-        .map_err(AsmError::StoreError)
+        .with_span(instr.span)
 }
 
-fn op_ifbitjmpref(ctx: &mut Context, args: &[ast::InstrArg<'_>]) -> Result<(), AsmError> {
-    op_ifbitjmpref_impl::<false>(ctx, args)
+fn op_ifbitjmpref(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
+    op_ifbitjmpref_impl::<false>(ctx, instr)
 }
 
-fn op_ifnbitjmpref(ctx: &mut Context, args: &[ast::InstrArg<'_>]) -> Result<(), AsmError> {
-    op_ifbitjmpref_impl::<true>(ctx, args)
+fn op_ifnbitjmpref(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
+    op_ifbitjmpref_impl::<true>(ctx, instr)
 }
 
 fn op_ifbitjmpref_impl<const INV: bool>(
     ctx: &mut Context,
-    args: &[ast::InstrArg<'_>],
+    instr: &ast::Instr<'_>,
 ) -> Result<(), AsmError> {
-    let (NatU5(s), c @ SliceOrCont(..)) = args.parse()?;
+    let (NatU5(s), c @ SliceOrCont(..)) = instr.parse_args()?;
     let c = c.into_cell()?;
 
     let b = ctx.get_builder_ext(16, 2);
-    b.store_u16(0xe39c | (0x20 * INV as u16) | s as u16)?;
-    b.store_reference(c).map_err(AsmError::StoreError)
+    b.store_u16(0xe39c | (0x20 * INV as u16) | s as u16)
+        .with_span(instr.span)?;
+    b.store_reference(c).with_span(instr.span)
 }
 
-fn op_callvar(ctx: &mut Context, args: &[ast::InstrArg<'_>]) -> Result<(), AsmError> {
+fn op_callvar(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
     // PUSH c3
-    op_preparevar(ctx, args)?;
+    op_preparevar(ctx, instr)?;
     // EXECUTE
-    write_op(ctx, 0xd8, 8)
+    write_op(ctx, 0xd8, 8).with_span(instr.span)
 }
 
-fn op_jmpvar(ctx: &mut Context, args: &[ast::InstrArg<'_>]) -> Result<(), AsmError> {
+fn op_jmpvar(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
     // PUSH c3
-    op_preparevar(ctx, args)?;
+    op_preparevar(ctx, instr)?;
     // JMPX
-    write_op(ctx, 0xd9, 8)
+    write_op(ctx, 0xd9, 8).with_span(instr.span)
 }
 
-fn op_preparevar(ctx: &mut Context, args: &[ast::InstrArg<'_>]) -> Result<(), AsmError> {
-    args.parse::<()>()?;
+fn op_preparevar(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
+    instr.parse_args::<()>()?;
     // PUSH c3
-    write_op_1sr(ctx, 0xed4, 12, 3)
+    write_op_1sr(ctx, 0xed4, 12, 3).with_span(instr.span)
 }
 
 fn op_simple<const BASE: u32, const BITS: u16>(
     ctx: &mut Context,
-    args: &[ast::InstrArg<'_>],
+    instr: &ast::Instr<'_>,
 ) -> Result<(), AsmError> {
-    args.parse::<()>()?;
-    write_op(ctx, BASE, BITS)
+    instr.parse_args::<()>()?;
+    write_op(ctx, BASE, BITS).with_span(instr.span)
 }
 
 fn op_1sr<const BASE: u32, const BITS: u16>(
     ctx: &mut Context,
-    args: &[ast::InstrArg<'_>],
+    instr: &ast::Instr<'_>,
 ) -> Result<(), AsmError> {
-    let SReg(s1) = args.parse()?;
-    write_op_1sr(ctx, BASE, BITS, s1)
+    let SReg(s1) = instr.parse_args()?;
+    write_op_1sr(ctx, BASE, BITS, s1).with_span(instr.span)
 }
 
 fn op_u4<const BASE: u32, const BITS: u16>(
     ctx: &mut Context,
-    args: &[ast::InstrArg<'_>],
+    instr: &ast::Instr<'_>,
 ) -> Result<(), AsmError> {
-    let NatU4(s1) = args.parse()?;
-    write_op_1sr(ctx, BASE, BITS, s1)
+    let NatU4(s1) = instr.parse_args()?;
+    write_op_1sr(ctx, BASE, BITS, s1).with_span(instr.span)
 }
 
 fn op_u8_minus1<const BASE: u32, const BITS: u16>(
     ctx: &mut Context,
-    args: &[ast::InstrArg<'_>],
+    instr: &ast::Instr<'_>,
 ) -> Result<(), AsmError> {
-    let NatU8minus1(s1) = args.parse()?;
-    write_op_1sr_l(ctx, BASE, BITS, s1)
+    let NatU8minus1(s1) = instr.parse_args()?;
+    write_op_1sr_l(ctx, BASE, BITS, s1).with_span(instr.span)
 }
 
 fn op_2sr<const BASE: u32, const BITS: u16>(
     ctx: &mut Context,
-    args: &[ast::InstrArg<'_>],
+    instr: &ast::Instr<'_>,
 ) -> Result<(), AsmError> {
-    let (SReg(s1), SReg(s2)) = args.parse()?;
-    write_op_2sr(ctx, BASE, BITS, s1, s2)
+    let (SReg(s1), SReg(s2)) = instr.parse_args()?;
+    write_op_2sr(ctx, BASE, BITS, s1, s2).with_span(instr.span)
 }
 
 fn op_2sr_adj<const BASE: u32, const BITS: u16, const ADJ: u32>(
     ctx: &mut Context,
-    args: &[ast::InstrArg<'_>],
+    instr: &ast::Instr<'_>,
 ) -> Result<(), AsmError> {
-    let (mut s1 @ FullSReg(_), mut s2 @ FullSReg(_)) = args.parse()?;
+    let (mut s1 @ FullSReg(..), mut s2 @ FullSReg(..)) = instr.parse_args()?;
     s1.0 += ((ADJ >> 4) & 0xf) as i16;
     s2.0 += (ADJ & 0xf) as i16;
     let SReg(s1) = s1.try_into()?;
     let SReg(s2) = s2.try_into()?;
-    write_op_2sr(ctx, BASE, BITS, s1, s2)
+    write_op_2sr(ctx, BASE, BITS, s1, s2).with_span(instr.span)
 }
 
 fn op_3sr<const BASE: u32, const BITS: u16>(
     ctx: &mut Context,
-    args: &[ast::InstrArg<'_>],
+    instr: &ast::Instr<'_>,
 ) -> Result<(), AsmError> {
-    let (SReg(s1), SReg(s2), SReg(s3)) = args.parse()?;
-    write_op_3sr(ctx, BASE, BITS, s1, s2, s3)
+    let (SReg(s1), SReg(s2), SReg(s3)) = instr.parse_args()?;
+    write_op_3sr(ctx, BASE, BITS, s1, s2, s3).with_span(instr.span)
 }
 
 fn op_3sr_adj<const BASE: u32, const BITS: u16, const ADJ: u32>(
     ctx: &mut Context,
-    args: &[ast::InstrArg<'_>],
+    instr: &ast::Instr<'_>,
 ) -> Result<(), AsmError> {
-    let (mut s1 @ FullSReg(_), mut s2 @ FullSReg(_), mut s3 @ FullSReg(_)) = args.parse()?;
+    let (mut s1 @ FullSReg(..), mut s2 @ FullSReg(..), mut s3 @ FullSReg(..)) =
+        instr.parse_args()?;
     s1.0 += ((ADJ >> 8) & 0xf) as i16;
     s2.0 += ((ADJ >> 4) & 0xf) as i16;
     s3.0 += (ADJ & 0xf) as i16;
     let SReg(s1) = s1.try_into()?;
     let SReg(s2) = s2.try_into()?;
     let SReg(s3) = s3.try_into()?;
-    write_op_3sr(ctx, BASE, BITS, s1, s2, s3)
+    write_op_3sr(ctx, BASE, BITS, s1, s2, s3).with_span(instr.span)
 }
 
 fn op_1cr<const BASE: u32, const BITS: u16>(
     ctx: &mut Context,
-    args: &[ast::InstrArg<'_>],
+    instr: &ast::Instr<'_>,
 ) -> Result<(), AsmError> {
-    let CReg(c) = args.parse()?;
-    write_op_1sr(ctx, BASE, BITS, c)
+    let CReg(c) = instr.parse_args()?;
+    write_op_1sr(ctx, BASE, BITS, c).with_span(instr.span)
 }
 
 fn op_1ref<const BASE: u32, const BITS: u16>(
     ctx: &mut Context,
-    args: &[ast::InstrArg<'_>],
+    instr: &ast::Instr<'_>,
 ) -> Result<(), AsmError> {
-    let c = args.parse::<SliceOrCont>()?.into_cell()?;
-    write_op_1ref(ctx, BASE, BITS, c)
+    let c = instr.parse_args::<SliceOrCont>()?.into_cell()?;
+    write_op_1ref(ctx, BASE, BITS, c).with_span(instr.span)
 }
 
 fn op_2ref<const BASE: u32, const BITS: u16>(
     ctx: &mut Context,
-    args: &[ast::InstrArg<'_>],
+    instr: &ast::Instr<'_>,
 ) -> Result<(), AsmError> {
-    let (c1 @ SliceOrCont(..), c2 @ SliceOrCont(..)) = args.parse()?;
+    let (c1 @ SliceOrCont(..), c2 @ SliceOrCont(..)) = instr.parse_args()?;
     let c1 = c1.into_cell()?;
     let c2 = c2.into_cell()?;
-    write_op_2ref(ctx, BASE, BITS, c1, c2)
+    write_op_2ref(ctx, BASE, BITS, c1, c2).with_span(instr.span)
 }
 
-fn write_op(ctx: &mut Context, base: u32, bits: u16) -> Result<(), AsmError> {
-    ctx.get_builder(bits)
-        .store_uint(base as _, bits)
-        .map_err(AsmError::StoreError)
+fn write_op(ctx: &mut Context, base: u32, bits: u16) -> Result<(), Error> {
+    ctx.get_builder(bits).store_uint(base as _, bits)
 }
 
-fn write_op_1sr(ctx: &mut Context, base: u32, bits: u16, s1: u8) -> Result<(), AsmError> {
+fn write_op_1sr(ctx: &mut Context, base: u32, bits: u16, s1: u8) -> Result<(), Error> {
     ctx.get_builder(bits + 4)
         .store_uint(((base << 4) | s1 as u32) as _, bits + 4)
-        .map_err(AsmError::StoreError)
 }
 
-fn write_op_1sr_l(ctx: &mut Context, base: u32, bits: u16, s1: u8) -> Result<(), AsmError> {
+fn write_op_1sr_l(ctx: &mut Context, base: u32, bits: u16, s1: u8) -> Result<(), Error> {
     ctx.get_builder(bits + 8)
         .store_uint(((base << 8) | s1 as u32) as _, bits + 8)
-        .map_err(AsmError::StoreError)
 }
 
-fn write_op_2sr(ctx: &mut Context, base: u32, bits: u16, s1: u8, s2: u8) -> Result<(), AsmError> {
-    ctx.get_builder(bits + 8)
-        .store_uint(
-            ((base << 8) | (s1 << 4) as u32 | (s2 & 0xf) as u32) as _,
-            bits + 8,
-        )
-        .map_err(AsmError::StoreError)
+fn write_op_2sr(ctx: &mut Context, base: u32, bits: u16, s1: u8, s2: u8) -> Result<(), Error> {
+    ctx.get_builder(bits + 8).store_uint(
+        ((base << 8) | (s1 << 4) as u32 | (s2 & 0xf) as u32) as _,
+        bits + 8,
+    )
 }
 
 fn write_op_3sr(
@@ -1169,54 +1199,57 @@ fn write_op_3sr(
     s1: u8,
     s2: u8,
     s3: u8,
-) -> Result<(), AsmError> {
+) -> Result<(), Error> {
     let args = (((s1 & 0xf) as u32) << 8) | (((s2 & 0xf) as u32) << 4) | ((s3 & 0xf) as u32);
     ctx.get_builder(bits + 12)
         .store_uint(((base << 12) | args) as _, bits + 12)
-        .map_err(AsmError::StoreError)
 }
 
-fn write_op_1ref(ctx: &mut Context, base: u32, bits: u16, r: Cell) -> Result<(), AsmError> {
+fn write_op_1ref(ctx: &mut Context, base: u32, bits: u16, r: Cell) -> Result<(), Error> {
     let b = ctx.get_builder_ext(bits, 2);
     b.store_uint(base as _, bits)?;
-    b.store_reference(r).map_err(AsmError::StoreError)
+    b.store_reference(r)
 }
 
-fn write_op_2ref(
-    ctx: &mut Context,
-    base: u32,
-    bits: u16,
-    r1: Cell,
-    r2: Cell,
-) -> Result<(), AsmError> {
+fn write_op_2ref(ctx: &mut Context, base: u32, bits: u16, r1: Cell, r2: Cell) -> Result<(), Error> {
     let b = ctx.get_builder_ext(bits, 3);
     b.store_uint(base as _, bits)?;
     b.store_reference(r1)?;
-    b.store_reference(r2).map_err(AsmError::StoreError)
+    b.store_reference(r2)
 }
 
-fn write_slice_padding(padding: u16, b: &mut CellBuilder) -> Result<(), AsmError> {
+fn write_slice_padding(padding: u16, b: &mut CellBuilder) -> Result<(), Error> {
     debug_assert!((1..=8).contains(&padding), "Invalid slice padding");
     b.store_bit_one()?;
-    b.store_zeros(padding - 1)?;
-    Ok(())
+    b.store_zeros(padding - 1)
 }
 
 impl<'a> SliceOrCont<'a> {
     fn into_cell(self) -> Result<Cell, AsmError> {
         match self.0 {
             Either::Left(cell) => Ok(cell),
-            Either::Right((items, _)) => {
+            Either::Right((items, block_span)) => {
                 let opcodes = cp0();
                 let mut context = Context::new();
                 for item in items {
                     context.add_instr(opcodes, item)?;
                 }
                 context
-                    .into_builder()?
+                    .into_builder(block_span)?
                     .build()
-                    .map_err(AsmError::StoreError)
+                    .with_span(block_span)
             }
         }
+    }
+}
+
+trait WithSpan<T> {
+    fn with_span(self, span: ast::Span) -> Result<T, AsmError>;
+}
+
+impl<T> WithSpan<T> for Result<T, Error> {
+    #[inline]
+    fn with_span(self, span: ast::Span) -> Result<T, AsmError> {
+        self.map_err(|e| AsmError::StoreError { inner: e, span })
     }
 }

@@ -6,7 +6,7 @@ use everscale_types::prelude::*;
 use self::opcodes::{cp0, Context};
 use crate::ast;
 
-pub fn assemble(ast: &[ast::Instr]) -> Result<Cell, AsmError> {
+pub fn assemble(ast: &[ast::Instr], span: ast::Span) -> Result<Cell, AsmError> {
     let opcodes = cp0();
 
     let mut context = Context::new();
@@ -15,29 +15,35 @@ pub fn assemble(ast: &[ast::Instr]) -> Result<Cell, AsmError> {
     }
 
     context
-        .into_builder()?
+        .into_builder(span)?
         .build()
-        .map_err(AsmError::StoreError)
+        .map_err(|e| AsmError::StoreError { inner: e, span })
 }
 
 #[derive(thiserror::Error, Debug)]
 pub enum AsmError {
-    #[error("unknown opcode: {0}")]
-    UnknownOpcode(Box<str>),
+    #[error("unknown opcode: {name}")]
+    UnknownOpcode { name: Box<str>, span: ast::Span },
     #[error("unexpected arg")]
-    UnexpectedArg,
+    UnexpectedArg(ast::Span),
     #[error("invalid register")]
-    InvalidRegister,
+    InvalidRegister(ast::Span),
     #[error("too many args")]
-    TooManyArgs,
+    TooManyArgs(ast::Span),
     #[error("not enough args")]
-    NotEnoughArgs,
+    NotEnoughArgs(ast::Span),
     #[error("out of range")]
-    OutOfRange,
-    #[error("invalid usage: {0}")]
-    WrongUsage(&'static str),
-    #[error("store error: {0}")]
-    StoreError(#[from] everscale_types::error::Error),
+    OutOfRange(ast::Span),
+    #[error("invalid usage: {details}")]
+    WrongUsage {
+        details: &'static str,
+        span: ast::Span,
+    },
+    #[error("store error: {inner}")]
+    StoreError {
+        inner: everscale_types::error::Error,
+        span: ast::Span,
+    },
     #[error("multiple: {0:?}")]
     Multiple(Box<[AsmError]>),
 }

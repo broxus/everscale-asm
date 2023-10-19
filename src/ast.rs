@@ -9,8 +9,14 @@ use num_traits::Num;
 
 pub type Span = SimpleSpan<usize>;
 
-pub fn parse(s: &'_ str) -> ParseResult<Vec<Instr<'_>>, ParserError> {
+pub fn parse(s: &'_ str) -> ParseResult<Code<'_>, ParserError> {
     parser().parse(s)
+}
+
+#[derive(Debug, Clone)]
+pub struct Code<'a> {
+    pub span: Span,
+    pub items: Vec<Instr<'a>>,
 }
 
 #[derive(Debug, Clone)]
@@ -37,8 +43,15 @@ pub enum InstrArgValue<'a> {
     Invalid,
 }
 
-fn parser<'a>() -> impl Parser<'a, &'a str, Vec<Instr<'a>>, extra::Err<ParserError>> {
-    instr().padded().repeated().collect()
+fn parser<'a>() -> impl Parser<'a, &'a str, Code<'a>, extra::Err<ParserError>> {
+    instr()
+        .padded()
+        .repeated()
+        .collect()
+        .map_with(|items, e| Code {
+            span: e.span(),
+            items,
+        })
 }
 
 fn instr<'a>() -> impl Parser<'a, &'a str, Instr<'a>, extra::Err<ParserError>> {
@@ -385,7 +398,7 @@ mod tests {
 
     #[test]
     fn empty_asm() {
-        assert!(parse("").unwrap().is_empty());
+        assert!(parse("").unwrap().items.is_empty());
     }
 
     #[test]

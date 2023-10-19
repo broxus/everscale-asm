@@ -3,6 +3,9 @@ name = "everscale-asm"
 version = "0.1.0"
 edition = "2021"
 
+[workspace]
+members = ["lsp-server"]
+
 [dependencies]
 ahash = "0.8"
 chumsky = "1.0.0-alpha.6"

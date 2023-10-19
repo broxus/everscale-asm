@@ -1,0 +1,68 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "scopeName": "source.tvm",
+  "patterns": [
+    {
+      "include": "#tvm"
+    }
+  ],
+  "repository": {
+    "tvm": {
+      "patterns": [
+        {
+          "include": "#comment"
+        },
+        {
+          "include": "#instruction_ident"
+        },
+        {
+          "include": "#instruction_arg"
+        }
+      ]
+    },
+    "comment": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.tvm",
+          "match": "(//.*$)"
+        }
+      ]
+    },
+    "instruction_ident": {
+      "patterns": [
+        {
+          "name": "entity.name.function",
+          "match": "([0-9]?[A-Z#_][a-zA-Z0-9#_]*)"
+        }
+      ]
+    },
+    "instruction_arg": {
+      "patterns": [
+        {
+          "name": "constant.numeric.tvm",
+          "match": "(-?[0-9]+)(?=[\\s,}])"
+        },
+        {
+          "name": "constant.numeric.tvm",
+          "match": "(-?(0x|0b)[0-9a-fA-F]+)(?=[\\s,}])"
+        },
+        {
+          "name": "constant.numeric.tvm",
+          "match": "(b{[^}]*})(?=[\\s,}])"
+        },
+        {
+          "name": "constant.numeric.tvm",
+          "match": "(x{[^}]*})(?=[\\s,}])"
+        },
+        {
+          "name": "support.type.tvm",
+          "match": "(s?\\((-\\d)?\\))(?=[\\s,}])"
+        },
+        {
+          "name": "support.type.tvm",
+          "match": "([cs]\\d+)(?=[\\s,}])"
+        }
+      ]
+    }
+  }
+}

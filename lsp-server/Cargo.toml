@@ -1,0 +1,19 @@
+[package]
+name = "tvm-lsp-server"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ahash = "0.8"
+anyhow = "1.0"
+async-trait = "0.1"
+dashmap = "5.5"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync", "io-std"] }
+tower-lsp = "0.20"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+everscale-asm = { path = "../" }
+
+[patch.crates-io]
+everscale-types = { git = "https://github.com/broxus/everscale-types.git" }

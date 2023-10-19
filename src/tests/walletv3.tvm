@@ -1,0 +1,66 @@
+SETCP0 DUP IFNOTRET // return if recv_internal
+DUP
+PUSHINT 85143
+EQUAL OVER
+PUSHINT 78748
+EQUAL OR
+// "seqno" and "get_public_key" get-methods
+IFJUMP {
+    PUSHINT 1
+    AND
+    PUSHCTR c4 CTOS
+    LDU 32
+    LDU 32
+    NIP
+    PLDU 256
+    CONDSEL
+}
+// fail unless recv_external
+INC THROWIF 32
+
+PUSHPOW2 9 LDSLICEX // signature
+DUP
+LDU 32 // subwallet_id
+LDU 32 // valid_until
+LDU 32 // msg_seqno
+
+NOW
+XCHG s1, s3
+LEQ
+THROWIF 35
+
+PUSH c4 CTOS
+LDU 32
+LDU 32
+LDU 256
+ENDS
+
+XCPU s3, s2
+EQUAL
+THROWIF 33
+
+XCPU s4, s4
+EQUAL
+THROWIF 34
+
+XCHG s0, s4
+HASHSU
+XC2PU s0, s5, s5
+CHKSIGNU THROWIFNOT 35
+
+ACCEPT
+
+WHILE { DUP SREFS }, {
+    LDU 8
+    LDREF
+    XCHG s0, s2
+    SENDRAWMSG
+}
+ENDS SWAP INC
+
+NEWC
+STU 32
+STU 32
+STU 256
+ENDC
+POP c4

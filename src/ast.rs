@@ -1,6 +1,5 @@
 use std::str::FromStr;
 
-use chumsky::error::Error;
 use chumsky::prelude::*;
 use chumsky::util::MaybeRef;
 use everscale_types::prelude::{Cell, CellBuilder};
@@ -45,6 +44,7 @@ pub enum InstrArgValue<'a> {
 
 fn parser<'a>() -> impl Parser<'a, &'a str, Code<'a>, extra::Err<ParserError>> {
     instr()
+        .recover_with(skip_then_retry_until(any().ignored(), text::newline()))
         .padded()
         .repeated()
         .collect()
@@ -55,7 +55,21 @@ fn parser<'a>() -> impl Parser<'a, &'a str, Code<'a>, extra::Err<ParserError>> {
 }
 
 fn instr<'a>() -> impl Parser<'a, &'a str, Instr<'a>, extra::Err<ParserError>> {
+    fn compute_min_span(ident_span: Span, args: &[InstrArg<'_>]) -> Span {
+        let mut res = ident_span;
+        for arg in args {
+            res.start = std::cmp::min(res.start, arg.span.start);
+            res.end = std::cmp::max(res.end, arg.span.end);
+        }
+        res
+    }
+
     recursive(|instr| {
+        let comment = just("//")
+            .then(any().and_is(just('\n').not()).repeated())
+            .padded()
+            .ignored();
+
         let instr_arg = choice((
             nat().map(InstrArgValue::Nat),
             stack_register().map(|idx| {
@@ -79,6 +93,7 @@ fn instr<'a>() -> impl Parser<'a, &'a str, Instr<'a>, extra::Err<ParserError>> {
         });
 
         let args = instr_arg
+            .padded_by(comment.repeated())
             .separated_by(just(',').padded().recover_with(skip_then_retry_until(
                 any().ignored(),
                 choice((just(',').ignored(), text::newline())),
@@ -87,10 +102,11 @@ fn instr<'a>() -> impl Parser<'a, &'a str, Instr<'a>, extra::Err<ParserError>> {
 
         instr_ident()
             .map_with(|ident, e| (ident, e.span()))
+            .padded_by(comment.repeated())
             .padded()
             .then(args)
-            .map_with(|((ident, ident_span), args), e| Instr {
-                span: e.span(),
+            .map(|((ident, ident_span), args)| Instr {
+                span: compute_min_span(ident_span, &args),
                 ident,
                 ident_span,
                 args,
@@ -99,24 +115,49 @@ fn instr<'a>() -> impl Parser<'a, &'a str, Instr<'a>, extra::Err<ParserError>> {
 }
 
 fn instr_ident<'a>() -> impl Parser<'a, &'a str, &'a str, extra::Err<ParserError>> + Clone {
-    fn is_instr_ident_char(c: char, ext: bool) -> bool {
-        c.is_ascii_uppercase() || c.is_ascii_digit() || c == '#' || c == '_' || ext && c == ':'
-    }
-
     any()
-        .try_map(|c, span: Span| {
-            if is_instr_ident_char(c, false) {
-                Ok(c)
-            } else {
-                Err(ParserError::expected_found(
-                    [],
-                    Some(MaybeRef::Val(c)),
-                    span,
-                ))
-            }
-        })
-        .then(any().filter(|c| is_instr_ident_char(*c, true)).repeated())
+        .filter(|&c: &char| !c.is_whitespace() && c != ',' && c != '}' && c != '{')
+        .repeated()
+        .at_least(1)
         .to_slice()
+        .validate(|ident: &str, e, emitter| {
+            let invalid_char = 'char: {
+                let mut chars = ident.chars().peekable();
+                let Some(first) = chars.peek() else {
+                    break 'char None;
+                };
+
+                if first.is_ascii_digit() {
+                    chars.next();
+                    let Some(second) = chars.next() else {
+                        break 'char None;
+                    };
+                    if !second.is_ascii_uppercase() {
+                        break 'char Some(second);
+                    }
+                }
+
+                for c in chars {
+                    if !(c.is_ascii_uppercase()
+                        || c.is_ascii_digit()
+                        || c == '#'
+                        || c == '_'
+                        || c == ':')
+                    {
+                        break 'char Some(c);
+                    }
+                }
+
+                return ident;
+            };
+
+            emitter.emit(ParserError::ExpectedFound {
+                span: e.span(),
+                found: invalid_char,
+            });
+
+            "#INVALID#"
+        })
 }
 
 fn nat<'a>() -> impl Parser<'a, &'a str, BigInt, extra::Err<ParserError>> + Clone {
@@ -424,6 +465,15 @@ mod tests {
         DUP
         JMPX
         "#;
+
+        let (output, errors) = parse(CODE).into_output_errors();
+        println!("OUTPUT: {:#?}", output);
+        println!("ERRORS: {:#?}", errors);
+    }
+
+    #[test]
+    fn complex_asm() {
+        const CODE: &str = include_str!("tests/walletv3.tvm");
 
         let (output, errors) = parse(CODE).into_output_errors();
         println!("OUTPUT: {:#?}", output);

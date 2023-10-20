@@ -394,6 +394,19 @@ pub enum ParserError {
     UnknownError,
 }
 
+impl ParserError {
+    pub fn span(&self) -> Option<Span> {
+        match self {
+            Self::ExpectedFound { span, .. }
+            | Self::InvalidInt { span, .. }
+            | Self::InvalidStackRegister { span, .. }
+            | Self::InvalidControlRegister { span, .. }
+            | Self::InvalidSlice { span, .. } => Some(*span),
+            Self::UnknownError => None,
+        }
+    }
+}
+
 #[derive(thiserror::Error, Debug)]
 enum ControlRegisterError {
     #[error("control register `c{0}` is out of range")]

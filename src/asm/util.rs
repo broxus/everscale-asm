@@ -6,6 +6,8 @@ use num_traits::ToPrimitive;
 use crate::asm::AsmError;
 use crate::ast;
 
+use super::{ArgType, JoinResults};
+
 pub trait ParseArgs {
     fn parse_args<'a, T: FromInstrArgs<'a>>(&'a self) -> Result<T, AsmError>;
 }
@@ -66,7 +68,7 @@ where
         args: &'a [ast::InstrArg<'_>],
     ) -> Result<Self, AsmError> {
         match args {
-            [a1, a2] => Ok((T1::from_instr_arg(a1)?, T2::from_instr_arg(a2)?)),
+            [a1, a2] => (T1::from_instr_arg(a1), T2::from_instr_arg(a2)).join_results(),
             [_, _, first, rest @ ..] => Err(AsmError::TooManyArgs(compute_args_span(first, rest))),
             _ => Err(AsmError::NotEnoughArgs(instr_span)),
         }
@@ -84,11 +86,12 @@ where
         args: &'a [ast::InstrArg<'_>],
     ) -> Result<Self, AsmError> {
         match args {
-            [a1, a2, a3] => Ok((
-                T1::from_instr_arg(a1)?,
-                T2::from_instr_arg(a2)?,
-                T3::from_instr_arg(a3)?,
-            )),
+            [a1, a2, a3] => (
+                T1::from_instr_arg(a1),
+                T2::from_instr_arg(a2),
+                T3::from_instr_arg(a3),
+            )
+                .join_results(),
             [_, _, _, first, rest @ ..] => {
                 Err(AsmError::TooManyArgs(compute_args_span(first, rest)))
             }
@@ -109,10 +112,23 @@ where
     fn from_instr_arg(arg: &'a ast::InstrArg<'_>) -> Result<Self, AsmError> {
         match T1::from_instr_arg(arg) {
             Ok(v) => Ok(Self::Left(v)),
-            Err(e) => match T2::from_instr_arg(arg) {
+            Err(AsmError::ArgTypeMismatch {
+                span,
+                expected: expected_a,
+                found,
+            }) => match T2::from_instr_arg(arg) {
                 Ok(v) => Ok(Self::Right(v)),
-                Err(_) => Err(e),
+                Err(AsmError::ArgTypeMismatch {
+                    expected: expected_b,
+                    ..
+                }) => Err(AsmError::ArgTypeMismatch {
+                    span,
+                    expected: expected_a.join(expected_b),
+                    found,
+                }),
+                Err(e) => Err(e),
             },
+            Err(e) => Err(e),
         }
     }
 }
@@ -135,7 +151,11 @@ impl<'a> FromInstrArg<'a> for Nat<'a> {
     fn from_instr_arg(arg: &'a ast::InstrArg<'_>) -> Result<Self, AsmError> {
         match &arg.value {
             ast::InstrArgValue::Nat(n) => Ok(Self(n)),
-            _ => Err(AsmError::UnexpectedArg(arg.span)),
+            _ => Err(AsmError::ArgTypeMismatch {
+                span: arg.span,
+                expected: ArgType::Nat.expected_exact(),
+                found: arg.value.ty(),
+            }),
         }
     }
 }
@@ -153,7 +173,11 @@ impl FromInstrArg<'_> for NatU2 {
                 }
                 Err(AsmError::OutOfRange(arg.span))
             }
-            _ => Err(AsmError::UnexpectedArg(arg.span)),
+            _ => Err(AsmError::ArgTypeMismatch {
+                span: arg.span,
+                expected: ArgType::Nat.expected_exact(),
+                found: arg.value.ty(),
+            }),
         }
     }
 }
@@ -171,7 +195,11 @@ impl FromInstrArg<'_> for NatU4 {
                 }
                 Err(AsmError::OutOfRange(arg.span))
             }
-            _ => Err(AsmError::UnexpectedArg(arg.span)),
+            _ => Err(AsmError::ArgTypeMismatch {
+                span: arg.span,
+                expected: ArgType::Nat.expected_exact(),
+                found: arg.value.ty(),
+            }),
         }
     }
 }
@@ -189,7 +217,11 @@ impl FromInstrArg<'_> for NatU5 {
                 }
                 Err(AsmError::OutOfRange(arg.span))
             }
-            _ => Err(AsmError::UnexpectedArg(arg.span)),
+            _ => Err(AsmError::ArgTypeMismatch {
+                span: arg.span,
+                expected: ArgType::Nat.expected_exact(),
+                found: arg.value.ty(),
+            }),
         }
     }
 }
@@ -203,7 +235,11 @@ impl FromInstrArg<'_> for NatU8 {
                 Some(n) => Ok(Self(n)),
                 None => Err(AsmError::OutOfRange(arg.span)),
             },
-            _ => Err(AsmError::UnexpectedArg(arg.span)),
+            _ => Err(AsmError::ArgTypeMismatch {
+                span: arg.span,
+                expected: ArgType::Nat.expected_exact(),
+                found: arg.value.ty(),
+            }),
         }
     }
 }
@@ -221,7 +257,11 @@ impl FromInstrArg<'_> for NatU8minus1 {
                 }
                 Err(AsmError::OutOfRange(arg.span))
             }
-            _ => Err(AsmError::UnexpectedArg(arg.span)),
+            _ => Err(AsmError::ArgTypeMismatch {
+                span: arg.span,
+                expected: ArgType::Nat.expected_exact(),
+                found: arg.value.ty(),
+            }),
         }
     }
 }
@@ -232,7 +272,11 @@ impl FromInstrArg<'_> for SReg {
     fn from_instr_arg(arg: &ast::InstrArg<'_>) -> Result<Self, AsmError> {
         match &arg.value {
             ast::InstrArgValue::SReg(n) => FullSReg(*n, arg.span).try_into(),
-            _ => Err(AsmError::UnexpectedArg(arg.span)),
+            _ => Err(AsmError::ArgTypeMismatch {
+                span: arg.span,
+                expected: ArgType::StackRegister.expected_exact(),
+                found: arg.value.ty(),
+            }),
         }
     }
 }
@@ -243,7 +287,11 @@ impl FromInstrArg<'_> for FullSReg {
     fn from_instr_arg(arg: &ast::InstrArg<'_>) -> Result<Self, AsmError> {
         match &arg.value {
             ast::InstrArgValue::SReg(n) => Ok(Self(*n, arg.span)),
-            _ => Err(AsmError::UnexpectedArg(arg.span)),
+            _ => Err(AsmError::ArgTypeMismatch {
+                span: arg.span,
+                expected: ArgType::StackRegister.expected_exact(),
+                found: arg.value.ty(),
+            }),
         }
     }
 }
@@ -266,7 +314,11 @@ impl FromInstrArg<'_> for CReg {
     fn from_instr_arg(arg: &ast::InstrArg<'_>) -> Result<Self, AsmError> {
         match &arg.value {
             ast::InstrArgValue::CReg(n) => Ok(Self(*n)),
-            _ => Err(AsmError::UnexpectedArg(arg.span)),
+            _ => Err(AsmError::ArgTypeMismatch {
+                span: arg.span,
+                expected: ArgType::ControlRegister.expected_exact(),
+                found: arg.value.ty(),
+            }),
         }
     }
 }
@@ -278,7 +330,13 @@ impl<'a> FromInstrArg<'a> for SliceOrCont<'a> {
         Ok(Self(match &arg.value {
             ast::InstrArgValue::Slice(cell) => Either::Left(cell.clone()),
             ast::InstrArgValue::Block(items) => Either::Right((items.as_slice(), arg.span)),
-            _ => return Err(AsmError::UnexpectedArg(arg.span)),
+            _ => {
+                return Err(AsmError::ArgTypeMismatch {
+                    span: arg.span,
+                    expected: ArgType::Slice.expected_or(ArgType::Block),
+                    found: arg.value.ty(),
+                })
+            }
         }))
     }
 }

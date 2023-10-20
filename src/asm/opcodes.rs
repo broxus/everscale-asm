@@ -14,14 +14,28 @@ use crate::asm::AsmError;
 use crate::ast;
 use crate::util::*;
 
+use super::JoinResults;
+
 #[derive(Default)]
 pub struct Context {
     stack: Vec<CellBuilder>,
+    allow_invalid: bool,
 }
 
 impl Context {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn set_allow_invalid(&mut self) {
+        self.allow_invalid = true;
+    }
+
+    pub fn make_child_context(&self) -> Context {
+        Self {
+            stack: Default::default(),
+            allow_invalid: self.allow_invalid,
+        }
     }
 
     pub fn add_instr(&mut self, opcodes: &Opcodes, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
@@ -960,7 +974,7 @@ fn op_pushintx(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError
 fn op_pushslice(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
     const MAX_BITS_OVERHEAD: u16 = 26; // Longest prefix/padding
 
-    let c = instr.parse_args::<SliceOrCont>()?.into_cell()?;
+    let c = instr.parse_args::<SliceOrCont>()?.into_cell(ctx)?;
 
     fn write_pushslice(ctx: &mut Context, c: Cell) -> Result<(), Error> {
         let bits = c.bit_len();
@@ -1139,9 +1153,11 @@ fn op_3sr_adj<const BASE: u32, const BITS: u16, const ADJ: u32>(
     s1.0 += ((ADJ >> 8) & 0xf) as i16;
     s2.0 += ((ADJ >> 4) & 0xf) as i16;
     s3.0 += (ADJ & 0xf) as i16;
-    let SReg(s1) = s1.try_into()?;
-    let SReg(s2) = s2.try_into()?;
-    let SReg(s3) = s3.try_into()?;
+    let (SReg(s1), SReg(s2), SReg(s3)) = if ctx.allow_invalid {
+        (s1.try_into(), s2.try_into(), s3.try_into()).join_results()?
+    } else {
+        (s1.try_into()?, s2.try_into()?, s3.try_into()?)
+    };
     write_op_3sr(ctx, BASE, BITS, s1, s2, s3).with_span(instr.span)
 }
 
@@ -1157,7 +1173,7 @@ fn op_1ref<const BASE: u32, const BITS: u16>(
     ctx: &mut Context,
     instr: &ast::Instr<'_>,
 ) -> Result<(), AsmError> {
-    let c = instr.parse_args::<SliceOrCont>()?.into_cell()?;
+    let c = instr.parse_args::<SliceOrCont>()?.into_cell(ctx)?;
     write_op_1ref(ctx, BASE, BITS, c).with_span(instr.span)
 }
 
@@ -1166,8 +1182,12 @@ fn op_2ref<const BASE: u32, const BITS: u16>(
     instr: &ast::Instr<'_>,
 ) -> Result<(), AsmError> {
     let (c1 @ SliceOrCont(..), c2 @ SliceOrCont(..)) = instr.parse_args()?;
-    let c1 = c1.into_cell()?;
-    let c2 = c2.into_cell()?;
+    let (c1, c2) = if ctx.allow_invalid {
+        (c1.into_cell(ctx), c2.into_cell(ctx)).join_results()?
+    } else {
+        (c1.into_cell(ctx)?, c2.into_cell(ctx)?)
+    };
+
     write_op_2ref(ctx, BASE, BITS, c1, c2).with_span(instr.span)
 }
 
@@ -1225,19 +1245,43 @@ fn write_slice_padding(padding: u16, b: &mut CellBuilder) -> Result<(), Error> {
 }
 
 impl<'a> SliceOrCont<'a> {
-    fn into_cell(self) -> Result<Cell, AsmError> {
+    fn into_cell(self, parent_ctx: &mut Context) -> Result<Cell, AsmError> {
         match self.0 {
             Either::Left(cell) => Ok(cell),
             Either::Right((items, block_span)) => {
                 let opcodes = cp0();
-                let mut context = Context::new();
-                for item in items {
-                    context.add_instr(opcodes, item)?;
+                let mut context = parent_ctx.make_child_context();
+
+                if context.allow_invalid {
+                    let mut errors = Vec::new();
+
+                    for item in items {
+                        if let Err(e) = context.add_instr(opcodes, item) {
+                            errors.push(e);
+                        }
+                    }
+
+                    context
+                        .into_builder(block_span)
+                        .and_then(|b| b.build().with_span(block_span))
+                        .map_err(move |e| {
+                            if errors.is_empty() {
+                                e
+                            } else {
+                                errors.push(e);
+                                AsmError::Multiple(errors.into_boxed_slice())
+                            }
+                        })
+                } else {
+                    for item in items {
+                        context.add_instr(opcodes, item)?;
+                    }
+
+                    context
+                        .into_builder(block_span)?
+                        .build()
+                        .with_span(block_span)
                 }
-                context
-                    .into_builder(block_span)?
-                    .build()
-                    .with_span(block_span)
             }
         }
     }

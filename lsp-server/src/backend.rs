@@ -82,7 +82,6 @@ impl LanguageServer for Backend {
                 //     resolve_provider: Some(true),
                 //     ..Default::default()
                 // }),
-                document_highlight_provider: Some(OneOf::Left(true)),
                 ..Default::default()
             },
         })
@@ -181,7 +180,7 @@ impl BackendState {
         while let Some(job) = receiver.recv().await {
             tracing::debug!(?job, "processing job");
             match job {
-                Job::ComputeDiagnostics(_path) => {
+                Job::ComputeDiagnostics(path) => {
                     let req_token = ProgressToken::Number(
                         self.progress_id.fetch_add(1, Ordering::Release) as i32,
                     );
@@ -207,7 +206,9 @@ impl BackendState {
                             .await;
                     }
 
-                    // TODO: process
+                    if let Err(e) = self.process_asm(&path).await {
+                        tracing::error!(%path, "failed to process asm: {e:?}");
+                    }
 
                     if create_req.is_ok() {
                         self.client
@@ -233,6 +234,81 @@ impl BackendState {
         let sender = self.jobs_sender.clone();
         Ok(sender.send(job).await?)
     }
+
+    #[tracing::instrument(skip_all)]
+    async fn process_asm(&self, path: &Url) -> anyhow::Result<()> {
+        tracing::debug!(%path, "compiling contract");
+
+        let source = Source::new(self.read_file(path)?);
+        let code = everscale_asm::Code::parse(&source.text);
+        tracing::debug!(errors = code.parser_errors().len(), "compiling finished");
+
+        let diagnostics = self.parser_error_to_diagnostic(path, &source, code.parser_errors());
+        self.client
+            .publish_diagnostics(path.clone(), diagnostics, None)
+            .await;
+
+        Ok(())
+    }
+
+    fn parser_error_to_diagnostic(
+        &self,
+        path: &Url,
+        source: &Source,
+        errors: &[everscale_asm::ParserError],
+    ) -> Vec<Diagnostic> {
+        let index_to_position = |index: usize| {
+            if index > 0 {
+                source.byte_index_to_position(index)
+            } else {
+                Ok(Position::default())
+            }
+        };
+
+        errors
+            .iter()
+            .map(|err| -> anyhow::Result<Diagnostic> {
+                let range = match err.span() {
+                    None => Range::default(),
+                    Some(span) => Range {
+                        start: index_to_position(span.start)?,
+                        end: index_to_position(span.end)?,
+                    },
+                };
+
+                Ok(Diagnostic {
+                    range,
+                    severity: Some(DiagnosticSeverity::ERROR),
+                    source: Some("tvm".to_owned()),
+                    message: err.to_string(),
+                    data: Some(serde_json::json!({
+                        "url": path,
+                    })),
+                    ..Default::default()
+                })
+            })
+            .filter_map(|res| match res {
+                Ok(res) => Some(res),
+                Err(e) => {
+                    tracing::debug!("error converting parser error to diagnostic: {e:?}");
+                    None
+                }
+            })
+            .collect()
+    }
+
+    fn read_file(&self, path: &Url) -> anyhow::Result<String> {
+        if let Some(entry) = self.documents.get(path.as_str()) {
+            return Ok(entry.text.clone());
+        }
+
+        // read from disk if the document is not owned by client
+        let Ok(file_path) = path.to_file_path() else {
+            anyhow::bail!("Unprocessable file URL");
+        };
+        let text = std::fs::read_to_string(file_path)?;
+        Ok(text)
+    }
 }
 
 pub struct Source {
@@ -242,8 +318,29 @@ pub struct Source {
 
 impl Source {
     pub fn new(text: String) -> Self {
-        let line_lengths = text.as_str().lines().map(|x| x.len()).collect();
+        let line_lengths = text
+            .as_str()
+            .split_inclusive('\n')
+            .map(|x| x.len())
+            .collect();
         Self { text, line_lengths }
+    }
+
+    pub fn byte_index_to_position(&self, index: usize) -> anyhow::Result<Position> {
+        let mut chars_read = 0;
+        for (i, line_length) in self.line_lengths.iter().enumerate() {
+            let line_number = i;
+            let first_char_pos = chars_read;
+            let last_char_pos = chars_read + line_length;
+            if index >= first_char_pos && index <= last_char_pos {
+                return Ok(Position {
+                    line: line_number as u32,
+                    character: (index - first_char_pos) as u32,
+                });
+            }
+            chars_read += line_length;
+        }
+        anyhow::bail!("source index out of range: {index}");
     }
 }
 

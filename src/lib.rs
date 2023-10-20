@@ -1,5 +1,8 @@
 use everscale_types::prelude::*;
 
+pub use asm::AsmError;
+pub use ast::ParserError;
+
 mod asm;
 mod ast;
 mod util;

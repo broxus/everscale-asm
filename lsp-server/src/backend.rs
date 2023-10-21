@@ -2,6 +2,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use either::Either;
 use tokio::sync::mpsc;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
@@ -243,7 +244,9 @@ impl BackendState {
         let code = everscale_asm::Code::parse(&source.text);
         tracing::debug!(errors = code.parser_errors().len(), "compiling finished");
 
-        let diagnostics = self.parser_error_to_diagnostic(path, &source, code.parser_errors());
+        let mut diagnostics = self.parser_error_to_diagnostic(path, &source, code.parser_errors());
+        diagnostics.extend(self.asm_error_to_diagnostic(path, &source, &code.check()));
+
         self.client
             .publish_diagnostics(path.clone(), diagnostics, None)
             .await;
@@ -257,29 +260,21 @@ impl BackendState {
         source: &Source,
         errors: &[everscale_asm::ParserError],
     ) -> Vec<Diagnostic> {
-        let index_to_position = |index: usize| {
-            if index > 0 {
-                source.byte_index_to_position(index)
-            } else {
-                Ok(Position::default())
-            }
-        };
-
         errors
             .iter()
             .map(|err| -> anyhow::Result<Diagnostic> {
                 let range = match err.span() {
                     None => Range::default(),
                     Some(span) => Range {
-                        start: index_to_position(span.start)?,
-                        end: index_to_position(span.end)?,
+                        start: source.byte_index_to_position(span.start)?,
+                        end: source.byte_index_to_position(span.end)?,
                     },
                 };
 
                 Ok(Diagnostic {
                     range,
                     severity: Some(DiagnosticSeverity::ERROR),
-                    source: Some("tvm".to_owned()),
+                    source: Some("tvm/parser".to_owned()),
                     message: err.to_string(),
                     data: Some(serde_json::json!({
                         "url": path,
@@ -291,6 +286,46 @@ impl BackendState {
                 Ok(res) => Some(res),
                 Err(e) => {
                     tracing::debug!("error converting parser error to diagnostic: {e:?}");
+                    None
+                }
+            })
+            .collect()
+    }
+
+    fn asm_error_to_diagnostic(
+        &self,
+        path: &Url,
+        source: &Source,
+        errors: &[everscale_asm::AsmError],
+    ) -> Vec<Diagnostic> {
+        errors
+            .iter()
+            .flat_map(|error| match error {
+                everscale_asm::AsmError::Multiple(inner) => Either::Left(inner.iter()),
+                _ => Either::Right(std::iter::once(error)),
+            })
+            .map(|err| -> anyhow::Result<Diagnostic> {
+                let span = err.span();
+                let range = Range {
+                    start: source.byte_index_to_position(span.start)?,
+                    end: source.byte_index_to_position(span.end)?,
+                };
+
+                Ok(Diagnostic {
+                    range,
+                    severity: Some(DiagnosticSeverity::ERROR),
+                    source: Some("tvm/asm".to_owned()),
+                    message: err.to_string(),
+                    data: Some(serde_json::json!({
+                        "url": path,
+                    })),
+                    ..Default::default()
+                })
+            })
+            .filter_map(|res| match res {
+                Ok(res) => Some(res),
+                Err(e) => {
+                    tracing::debug!("error converting ASM error to diagnostic: {e:?}");
                     None
                 }
             })
@@ -327,12 +362,16 @@ impl Source {
     }
 
     pub fn byte_index_to_position(&self, index: usize) -> anyhow::Result<Position> {
+        if index == 0 {
+            return Ok(Position::default());
+        }
+
         let mut chars_read = 0;
         for (i, line_length) in self.line_lengths.iter().enumerate() {
             let line_number = i;
             let first_char_pos = chars_read;
             let last_char_pos = chars_read + line_length;
-            if index >= first_char_pos && index <= last_char_pos {
+            if index >= first_char_pos && index < last_char_pos {
                 return Ok(Position {
                     line: line_number as u32,
                     character: (index - first_char_pos) as u32,

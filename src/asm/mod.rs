@@ -20,11 +20,12 @@ pub fn assemble(ast: &[ast::Instr], span: ast::Span) -> Result<Cell, AsmError> {
         .map_err(|e| AsmError::StoreError { inner: e, span })
 }
 
-pub fn check(ast: &[ast::Instr], span: ast::Span) -> Result<(), Vec<AsmError>> {
+pub fn check(ast: &[ast::Instr], span: ast::Span) -> Vec<AsmError> {
     let opcodes = cp0();
 
     let mut errors = Vec::new();
-    let mut context = Context::new().allow_invalid();
+    let mut context = Context::new();
+    context.set_allow_invalid();
     for instr in ast {
         if let Err(e) = context.add_instr(opcodes, instr) {
             errors.push(e);
@@ -38,11 +39,7 @@ pub fn check(ast: &[ast::Instr], span: ast::Span) -> Result<(), Vec<AsmError>> {
         errors.push(e);
     }
 
-    if errors.is_empty() {
-        Ok(())
-    } else {
-        Err(errors)
-    }
+    errors
 }
 
 impl ast::InstrArgValue<'_> {
@@ -100,7 +97,7 @@ pub enum ExpectedArgType {
 impl ExpectedArgType {
     pub fn join(mut self, other: ExpectedArgType) -> Self {
         fn join_inner(this: &mut ExpectedArgType, other: ExpectedArgType) {
-            let value = std::mem::replace(this, ExpectedArgType::Exact(ArgType::Invalid));
+            let mut value = std::mem::replace(this, ExpectedArgType::Exact(ArgType::Invalid));
             match &mut value {
                 ExpectedArgType::Exact(exact) => {
                     *this = ExpectedArgType::OneOf(*exact, Box::new(other))
@@ -128,7 +125,7 @@ impl std::fmt::Display for ExpectedArgType {
                     match rest {
                         Self::Exact(b) => return write!(f, " or {b}"),
                         Self::OneOf(b, next) => {
-                            write!(f, ", {b}");
+                            write!(f, ", {b}")?;
                             rest = next;
                         }
                     }

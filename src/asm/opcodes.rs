@@ -1056,7 +1056,7 @@ fn op_ifbitjmpref_impl<const INV: bool>(
     instr: &ast::Instr<'_>,
 ) -> Result<(), AsmError> {
     let (NatU5(s), c @ SliceOrCont(..)) = instr.parse_args()?;
-    let c = c.into_cell()?;
+    let c = c.into_cell(ctx)?;
 
     let b = ctx.get_builder_ext(16, 2);
     b.store_u16(0xe39c | (0x20 * INV as u16) | s as u16)
@@ -1131,8 +1131,11 @@ fn op_2sr_adj<const BASE: u32, const BITS: u16, const ADJ: u32>(
     let (mut s1 @ FullSReg(..), mut s2 @ FullSReg(..)) = instr.parse_args()?;
     s1.0 += ((ADJ >> 4) & 0xf) as i16;
     s2.0 += (ADJ & 0xf) as i16;
-    let SReg(s1) = s1.try_into()?;
-    let SReg(s2) = s2.try_into()?;
+    let (SReg(s1), SReg(s2)) = if ctx.allow_invalid {
+        (s1.try_into(), s2.try_into()).join_results()?
+    } else {
+        (s1.try_into()?, s2.try_into()?)
+    };
     write_op_2sr(ctx, BASE, BITS, s1, s2).with_span(instr.span)
 }
 
@@ -1261,17 +1264,18 @@ impl<'a> SliceOrCont<'a> {
                         }
                     }
 
-                    context
+                    match context
                         .into_builder(block_span)
                         .and_then(|b| b.build().with_span(block_span))
-                        .map_err(move |e| {
-                            if errors.is_empty() {
-                                e
-                            } else {
+                    {
+                        res if errors.is_empty() => res,
+                        res => {
+                            if let Err(e) = res {
                                 errors.push(e);
-                                AsmError::Multiple(errors.into_boxed_slice())
                             }
-                        })
+                            Err(AsmError::Multiple(errors.into_boxed_slice()))
+                        }
+                    }
                 } else {
                     for item in items {
                         context.add_instr(opcodes, item)?;

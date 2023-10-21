@@ -29,6 +29,14 @@ impl<'a> Code<'a> {
         }
     }
 
+    pub fn check(&self) -> Vec<AsmError> {
+        if let Some(ast::Code { items, span }) = &self.ast {
+            asm::check(items, *span)
+        } else {
+            Vec::new()
+        }
+    }
+
     pub fn try_into_valid(self) -> Result<ValidCode<'a>, ast::ParserError> {
         if self.parser_errors.is_empty() {
             if let Some(ast::Code { items, span }) = self.ast {

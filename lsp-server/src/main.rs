@@ -29,6 +29,6 @@ async fn main() {
 
     tracing::subscriber::set_global_default(subscriber).unwrap();
 
-    let (service, socket) = LspService::new(|client| Backend::new(client));
+    let (service, socket) = LspService::new(Backend::new);
     Server::new(stdin, stdout, socket).serve(service).await;
 }

@@ -243,8 +243,8 @@ fn register_stackops(t: &mut Opcodes) {
         // TODO: BLKDROP2
 
         // Null primitives
-        "NULL" | "PUSHNULL" => 0x6d,
-        "ISNULL" => 0x6e,
+        "NULL" | "PUSHNULL" | "NEWDICT" => 0x6d,
+        "ISNULL" | "DICTEMPTY" => 0x6e,
         // Tuple primitives
         "TUPLE" => 0x6f0(u4),
         "NIL" => 0x6f00,
@@ -515,7 +515,7 @@ fn register_stackops(t: &mut Opcodes) {
         "STU" => 0xcb(u8 - 1),
         "STREF" => 0xcc,
         "STBREFR" | "ENDCST" => 0xcd,
-        "STSLICE" => 0xce,
+        "STSLICE" | "STDICTS" => 0xce,
         "STIX" => 0xcf00,
         "STUX" => 0xcf01,
         "STIXR" => 0xcf02,
@@ -774,6 +774,73 @@ fn register_stackops(t: &mut Opcodes) {
         "CALLVAR" => op_callvar,
         "JMPVAR" => op_jmpvar,
         "PREPAREVAR" => op_preparevar,
+        "CALL" | "CALLDICT" => op_call,
+        "JMP" | "JMPDICT" => op_jmp,
+
+        "THROWANY" => 0xf2f0,
+        "THROWARGANY" => 0xf2f1,
+        "THROWANYIF" => 0xf2f2,
+        "THROWARGANYIF" => 0xf2f3,
+        "THROWANYIFNOT" => 0xf2f4,
+        "THROWARGANYIFNOT" => 0xf2f5,
+        "TRY" => 0xf2ff,
+        "TRYARGS" => op_tryargs,
+
+        // Dictionary manipulation
+        "STDICT" | "STOPTREF" => 0xf400,
+        "SKIPDICT" | "SKIPOPTREF" => 0xf401,
+        "LDDICTS" => 0xf402,
+        "PLDDICTS" => 0xf403,
+        "LDDICT" | "LDOPTREF" => 0xf404,
+        "PLDDICT" | "PLDOPTREF" => 0xf405,
+        "LDDICTQ" => 0xf406,
+        "PLDDICTQ" => 0xf407,
+
+        "DICTGET" => 0xf40a,
+        "DICTGETREF" => 0xf40b,
+        "DICTIGET" => 0xf40c,
+        "DICTIGETREF" => 0xf40d,
+        "DICTUGET" => 0xf40e,
+        "DICTUGETREF" => 0xf40f,
+
+        "DICTSET" => 0xf412,
+        "DICTSETREF" => 0xf413,
+        "DICTISET" => 0xf414,
+        "DICTISETREF" => 0xf415,
+        "DICTUSET" => 0xf416,
+        "DICTUSETREF" => 0xf417,
+        "DICTSETGET" => 0xf41a,
+        "DICTSETGETREF" => 0xf41b,
+        "DICTISETGET" => 0xf41c,
+        "DICTISETGETREF" => 0xf41d,
+        "DICTUSETGET" => 0xf41e,
+        "DICTUSETGETREF" => 0xf41f,
+
+        "DICTREPLACE" => 0xf422,
+        "DICTREPLACEREF" => 0xf423,
+        "DICTIREPLACE" => 0xf424,
+        "DICTIREPLACEREF" => 0xf425,
+        "DICTUREPLACE" => 0xf426,
+        "DICTUREPLACEREF" => 0xf427,
+        "DICTREPLACEGET" => 0xf42a,
+        "DICTREPLACEGETREF" => 0xf42b,
+        "DICTIREPLACEGET" => 0xf42c,
+        "DICTIREPLACEGETREF" => 0xf42d,
+        "DICTUREPLACEGET" => 0xf42e,
+        "DICTUREPLACEGETREF" => 0xf42f,
+
+        "DICTADD" => 0xf432,
+        "DICTADDREF" => 0xf433,
+        "DICTIADD" => 0xf434,
+        "DICTIADDREF" => 0xf435,
+        "DICTUADD" => 0xf436,
+        "DICTUADDREF" => 0xf437,
+        "DICTADDGET" => 0xf43a,
+        "DICTADDGETREF" => 0xf43b,
+        "DICTIADDGET" => 0xf43c,
+        "DICTIADDGETREF" => 0xf43d,
+        "DICTUADDGET" => 0xf43e,
+        "DICTUADDGETREF" => 0xf43f,
     });
 }
 
@@ -1082,6 +1149,50 @@ fn op_preparevar(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmErr
     instr.parse_args::<()>()?;
     // PUSH c3
     write_op_1sr(ctx, 0xed4, 12, 3).with_span(instr.span)
+}
+
+fn op_call(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
+    let WithSpan(Nat(id), nat_span) = instr.parse_args()?;
+
+    match id.to_i16() {
+        Some(id @ 0x00..=0xff) => write_op_1sr_l(ctx, 0xf0, 8, id as u8),
+        Some(id @ 0x0100..=0x3fff) => ctx
+            .get_builder(24)
+            .store_uint(0xf10000 | ((id as u64) & 0x3fff), 24),
+        _ => {
+            // PUSHINT id
+            write_pushint(ctx, instr.span, nat_span, id)?;
+            // PUSH c3
+            op_preparevar(ctx, instr)?;
+            // EXECUTE
+            write_op(ctx, 0xd8, 8)
+        }
+    }
+    .with_span(instr.span)
+}
+
+fn op_jmp(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
+    let WithSpan(Nat(id), nat_span) = instr.parse_args()?;
+
+    match id.to_i16() {
+        Some(id @ 0x0000..=0x3fff) => ctx
+            .get_builder(24)
+            .store_uint(0xf14000 | ((id as u64) & 0x3fff), 24),
+        _ => {
+            // PUSHINT id
+            write_pushint(ctx, instr.span, nat_span, id)?;
+            // PUSH c3
+            op_preparevar(ctx, instr)?;
+            // JMPX
+            write_op(ctx, 0xd9, 8)
+        }
+    }
+    .with_span(instr.span)
+}
+
+fn op_tryargs(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
+    let (NatU4(s1), NatU4(s2)) = instr.parse_args()?;
+    write_op_2sr(ctx, 0xf3, 8, s1, s2).with_span(instr.span)
 }
 
 fn op_simple<const BASE: u32, const BITS: u16>(

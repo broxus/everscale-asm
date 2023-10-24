@@ -139,6 +139,8 @@ impl std::fmt::Display for ExpectedArgType {
 pub enum AsmError {
     #[error("unknown opcode: {name}")]
     UnknownOpcode { name: Box<str>, span: ast::Span },
+    #[error("unaligned continuation of {bits} bits")]
+    UnalignedCont { bits: u16, span: ast::Span },
     #[error("expected {expected}, got {found}")]
     ArgTypeMismatch {
         span: ast::Span,
@@ -181,6 +183,7 @@ impl AsmError {
     pub fn span(&self) -> ast::Span {
         match self {
             Self::UnknownOpcode { span, .. }
+            | Self::UnalignedCont { span, .. }
             | Self::ArgTypeMismatch { span, .. }
             | Self::InvalidRegister(span)
             | Self::TooManyArgs(span)

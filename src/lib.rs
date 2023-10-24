@@ -177,4 +177,17 @@ mod tests {
         println!("{}", code.display_tree());
         Ok(())
     }
+
+    #[test]
+    fn complex_asm() -> anyhow::Result<()> {
+        const CODE: &str = include_str!("tests/walletv3.tvm");
+
+        let output = Code::assemble(CODE).unwrap();
+        assert_eq!(
+            output.repr_hash(),
+            &"84dafa449f98a6987789ba232358072bc0f76dc4524002a5d0918b9a75d2d599"
+                .parse::<HashBytes>()?
+        );
+        Ok(())
+    }
 }

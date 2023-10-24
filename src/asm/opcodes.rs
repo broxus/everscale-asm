@@ -320,6 +320,7 @@ fn register_stackops(t: &mut Opcodes) {
         "PUSHREFSLICE" => 0x89(ref),
         "PUSHREFCONT" => 0x8a(ref),
         "PUSHSLICE" | "SLICE" => op_pushslice,
+        "PUSHCONT" | "CONT" => op_pushcont,
 
         // Arithmetic operations
         "ADD" => 0xa0,
@@ -776,6 +777,14 @@ fn register_stackops(t: &mut Opcodes) {
         "PREPAREVAR" => op_preparevar,
         "CALL" | "CALLDICT" => op_call,
         "JMP" | "JMPDICT" => op_jmp,
+        "PREPARE" | "PREPAREDICT" => op_prepare,
+
+        "THROW" => op_throw,
+        "THROWIF" => op_throwif,
+        "THROWIFNOT" => op_throwifnot,
+        "THROWARG" => op_throwarg,
+        "THROWARGIF" => op_throwargif,
+        "THROWARGIFNOT" => op_throwargifnot,
 
         "THROWANY" => 0xf2f0,
         "THROWARGANY" => 0xf2f1,
@@ -1291,6 +1300,40 @@ fn op_pushslice(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmErro
     write_pushslice(ctx, c).with_span(instr.span)
 }
 
+fn op_pushcont(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
+    const MAX_BITS_OVERHEAD: u16 = 16;
+
+    let WithSpan(c @ SliceOrCont(..), span) = instr.parse_args()?;
+    let c = c.into_cell(ctx)?;
+    let bits = c.bit_len();
+    if bits % 8 != 0 {
+        return Err(AsmError::UnalignedCont { bits, span });
+    }
+
+    fn write_pushcont(ctx: &mut Context, c: Cell) -> Result<(), Error> {
+        let bits = c.bit_len();
+        let refs = c.reference_count();
+
+        let (rem_bits, rem_refs) = ctx.top_capacity();
+        if bits + MAX_BITS_OVERHEAD > rem_bits || refs + 1 > rem_refs {
+            // Fallback to PUSHREFCONT
+            let b = ctx.get_builder_ext(8, 2);
+            b.store_u8(0x8a)?;
+            b.store_reference(c)
+        } else if bits <= 120 && refs == 0 {
+            let b = ctx.get_builder(8 + bits);
+            b.store_u8(0x90 | (bits / 8) as u8)?;
+            b.store_slice(c.as_slice()?)
+        } else {
+            let b = ctx.get_builder_ext(16 + bits, refs + 1);
+            b.store_u16(0x8e00 | ((refs as u16) << 7) | (bits / 8))?;
+            b.store_slice(c.as_slice()?)
+        }
+    }
+
+    write_pushcont(ctx, c).with_span(instr.span)
+}
+
 fn op_pldrefidx(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
     let NatU2(s) = instr.parse_args()?;
     ctx.get_builder(16)
@@ -1360,7 +1403,7 @@ fn op_preparevar(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmErr
 fn op_call(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
     let WithSpan(Nat(id), nat_span) = instr.parse_args()?;
 
-    match id.to_i16() {
+    match id.to_u16() {
         Some(id @ 0x00..=0xff) => write_op_1sr_l(ctx, 0xf0, 8, id as u8),
         Some(id @ 0x0100..=0x3fff) => ctx
             .get_builder(24)
@@ -1380,7 +1423,7 @@ fn op_call(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
 fn op_jmp(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
     let WithSpan(Nat(id), nat_span) = instr.parse_args()?;
 
-    match id.to_i16() {
+    match id.to_u16() {
         Some(id @ 0x0000..=0x3fff) => ctx
             .get_builder(24)
             .store_uint(0xf14000 | ((id as u64) & 0x3fff), 24),
@@ -1394,6 +1437,77 @@ fn op_jmp(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
         }
     }
     .with_span(instr.span)
+}
+
+fn op_prepare(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
+    let WithSpan(Nat(id), nat_span) = instr.parse_args()?;
+
+    match id.to_u16() {
+        Some(id @ 0x0000..=0x3fff) => ctx
+            .get_builder(24)
+            .store_uint(0xf18000 | ((id as u64) & 0x3fff), 24)
+            .with_span(instr.span),
+        _ => {
+            // PUSHINT id
+            write_pushint(ctx, instr.span, nat_span, id)?;
+            // PUSH c3
+            op_preparevar(ctx, instr)
+        }
+    }
+}
+
+fn op_throw(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
+    let WithSpan(Nat(id), nat_span) = instr.parse_args()?;
+
+    match id.to_u16() {
+        Some(id @ 0x00..=0x3f) => ctx.get_builder(16).store_u16(0xf200 | id),
+        Some(id @ 0x100..=0x7ff) => ctx.get_builder(24).store_uint(0xf2c000 | (id as u64), 24),
+        _ => return Err(AsmError::OutOfRange(nat_span)),
+    }
+    .with_span(instr.span)
+}
+
+fn op_throwif(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
+    let WithSpan(Nat(id), nat_span) = instr.parse_args()?;
+
+    match id.to_u16() {
+        Some(id @ 0x00..=0x3f) => ctx.get_builder(16).store_u16(0xf240 | id),
+        Some(id @ 0x100..=0x7ff) => ctx.get_builder(24).store_uint(0xf2d000 | (id as u64), 24),
+        _ => return Err(AsmError::OutOfRange(nat_span)),
+    }
+    .with_span(instr.span)
+}
+
+fn op_throwifnot(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
+    let WithSpan(Nat(id), nat_span) = instr.parse_args()?;
+
+    match id.to_u16() {
+        Some(id @ 0x00..=0x3f) => ctx.get_builder(16).store_u16(0xf280 | id),
+        Some(id @ 0x100..=0x7ff) => ctx.get_builder(24).store_uint(0xf2e000 | (id as u64), 24),
+        _ => return Err(AsmError::OutOfRange(nat_span)),
+    }
+    .with_span(instr.span)
+}
+
+fn op_throwarg(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
+    let NatU11(n) = instr.parse_args()?;
+    ctx.get_builder(24)
+        .store_uint(0xf2c800 | (n as u64), 24)
+        .with_span(instr.span)
+}
+
+fn op_throwargif(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
+    let NatU11(n) = instr.parse_args()?;
+    ctx.get_builder(24)
+        .store_uint(0xf2d800 | (n as u64), 24)
+        .with_span(instr.span)
+}
+
+fn op_throwargifnot(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
+    let NatU11(n) = instr.parse_args()?;
+    ctx.get_builder(24)
+        .store_uint(0xf2e800 | (n as u64), 24)
+        .with_span(instr.span)
 }
 
 fn op_tryargs(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {

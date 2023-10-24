@@ -1,6 +1,7 @@
 [package]
 name = "tvm-lsp-server"
 description = "LSP server for the Rust implementation of TVM Assembler"
+repository = "https://github.com/broxus/everscale-asm"
 version = "0.0.1"
 edition = "2021"
 rust-version = "1.70"

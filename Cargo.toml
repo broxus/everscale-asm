@@ -2,21 +2,21 @@
 name = "everscale-asm"
 description = "Rust implementation of TVM Assembler"
 repository = "https://github.com/broxus/everscale-asm"
-version = "0.0.1"
+version = "0.0.2"
 edition = "2021"
 rust-version = "1.70"
 include = ["src/**/*.rs", "src/**/*.tvm", "./LICENSE-*", "./README.md"]
 license = "MIT OR Apache-2.0"
 
 [workspace]
-members = ["lsp-server"]
+members = ["lsp-server", "cli"]
 
 [dependencies]
 ahash = "0.8"
 anyhow = "1.0"
 chumsky = "1.0.0-alpha.6"
 either = "1.0"
-everscale-types = "0.1.0-rc.5"
+everscale-types = "0.1.0-rc.6"
 hex = "0.4"
 num-bigint = "0.4"
 num-traits = "0.2"

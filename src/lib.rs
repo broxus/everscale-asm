@@ -1,7 +1,7 @@
 use everscale_types::prelude::*;
 
-pub use asm::AsmError;
-pub use ast::ParserError;
+pub use asm::{ArgType, AsmError, ExpectedArgType};
+pub use ast::{ParserError, Span};
 
 mod asm;
 mod ast;
@@ -67,8 +67,12 @@ pub struct ValidCode<'a> {
 }
 
 impl ValidCode<'_> {
-    pub fn assemble(self) -> Result<Cell, asm::AsmError> {
+    pub fn assemble(&self) -> Result<Cell, asm::AsmError> {
         asm::assemble(&self.ast, self.span)
+    }
+
+    pub fn check(self) -> Vec<asm::AsmError> {
+        asm::check(&self.ast, self.span)
     }
 }
 

@@ -24,6 +24,15 @@ Rust implementation of TVM Assembler.
 
 ## LSP Server/Client
 
+- Install [TVM Language Support](https://marketplace.visualstudio.com/items?itemName=Rexagon.tvm-lsp-client-prerelease) VSCode extension;
+- Install language server:
+  ```bash
+  cargo install --locked tvm-lsp-server
+  ```
+- Install assembly CLI:
+  ```bash
+  cargo install --locked tvmasm
+
 ## Contributing
 
 We welcome contributions to the project! If you notice any issues or errors, feel free to open an issue or submit a pull request.

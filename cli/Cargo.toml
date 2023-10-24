@@ -1,0 +1,20 @@
+[package]
+name = "tvmasm"
+description = "CLI for TVM Assembler"
+repository = "https://github.com/broxus/everscale-asm"
+version = "0.0.1"
+edition = "2021"
+rust-version = "1.70"
+include = ["src/**/*.rs", "src/**/*.tvm", "./LICENSE-*", "./README.md"]
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+anyhow = "1.0"
+argh = "0.1"
+console = "0.15"
+either = "1.0"
+serde_json = "1.0"
+unicode-width = "0.1"
+
+everscale-types = { version = "0.1.0-rc.6", default-features = false }
+everscale-asm = { path = "../", version = "0.0.2" }

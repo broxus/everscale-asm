@@ -20,4 +20,4 @@ tower-lsp = "0.20"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
-everscale-asm = { path = "../", version = "0.0.1" }
+everscale-asm = { path = "../", version = "0.0.2" }

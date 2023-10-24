@@ -949,6 +949,104 @@ fn register_stackops(t: &mut Opcodes) {
         "DICTUGETJMPZ" => 0xf4bd,
         "DICTIGETEXECZ" => 0xf4be,
         "DICTUGETEXECZ" => 0xf4bf,
+
+        // Blockchain-specific primitives
+        "ACCEPT" => 0xf800,
+        "SETGASLIMIT" => 0xf801,
+        "BUYGAS" => 0xf802,
+        "GRAMTOGAS" => 0xf804,
+        "GASTOGRAM" => 0xf805,
+        "GASREMAINING" => 0xf806,
+        "COMMIT" => 0xf80f,
+
+        "RANDU256" => 0xf810,
+        "RAND" => 0xf811,
+        "SETRAND" => 0xf814,
+        "ADDRAND" | "RANDOMIZE" => 0xf815,
+
+        "GETPARAM" => 0xf82(u4),
+        "NOW" => 0xf823,
+        "BLOCKLT" => 0xf824,
+        "LTIME" => 0xf825,
+        "RANDSEED" => 0xf826,
+        "BALANCE" => 0xf827,
+        "MYADDR" => 0xf828,
+        "CONFIGROOT" => 0xf829,
+        "MYCODE" => 0xf82a,
+        "INITCODEHASH" => 0xf82b,
+        "STORAGEFEE" => 0xf82c,
+        "SEQNO" => 0xf82d,
+        "CONFIGDICT" => 0xf830,
+        "CONFIGPARAM" => 0xf832,
+        "CONFIGOPTPARAM" => 0xf833,
+
+        "GETGLOBVAR" => 0xf840,
+        "GETGLOB" => op_getglob,
+        "SETGLOBVAR" => 0xf860,
+        "SETGLOB" => op_setglob,
+
+        "HASHCU" => 0xf900,
+        "HASHSU" => 0xf901,
+        "SHA256U" => 0xf902,
+        "CHKSIGNU" => 0xf910,
+        "CHKSIGNS" => 0xf911,
+
+        "CDATASIZEQ" => 0xf940,
+        "CDATASIZE" => 0xf941,
+        "SDATASIZEQ" => 0xf942,
+        "SDATASIZE" => 0xf943,
+
+        "LDGRAMS" | "LDVARUINT16" => 0xfa00,
+        "LDVARINT16" => 0xfa01,
+        "STGRAMS" | "STVARUINT16" => 0xfa02,
+        "STVARINT16" => 0xfa03,
+
+        "LDVARUINT32" => 0xfa04,
+        "LDVARINT32" => 0xfa05,
+        "STVARUINT32" => 0xfa06,
+        "STVARINT32" => 0xfa07,
+
+        "LDMSGADDR" => 0xfa40,
+        "LDMSGADDRQ" => 0xfa41,
+        "PARSEMSGADDR" => 0xfa42,
+        "PARSEMSGADDRQ" => 0xfa43,
+        "REWRITESTDADDR" => 0xfa44,
+        "REWRITESTDADDRQ" => 0xfa45,
+        "REWRITEVARADDR" => 0xfa46,
+        "REWRITEVARADDRQ" => 0xfa47,
+
+        "SENDRAWMSG" => 0xfb00,
+        "RAWRESERVE" => 0xfb02,
+        "RAWRESERVEX" => 0xfb03,
+        "SETCODE" => 0xfb04,
+        "SETLIBCODE" => 0xfb06,
+        "CHANGELIB" => 0xfb07,
+
+        // Debug primitives
+        "DEBUG" => op_debug,
+        // TODO: "DEBUGSTR" | "DUMPTOSFMT"
+        // TODO: "DEBUGSTRI"
+
+        "DUMPSTK" => 0xfe00,
+        "DUMPSTKTOP" => op_dumpstktop,
+        "HEXDUMP" => 0xfe10,
+        "HEXPRINT" => 0xfe11,
+        "BINDUMP" => 0xfe12,
+        "BINPRINT" => 0xfe13,
+        "STRDUMP" => 0xfe14,
+        "STRPRINT" => 0xfe15,
+        "DEBUGOFF" => 0xfe1e,
+        "DEBUGON" => 0xfe1f,
+        "DUMP" => 0xfe2(s),
+        "PRINT" => 0xfe3(s),
+        // TODO: "LOGSTR"
+        // TODO: "PRINTSTR"
+        "LOGFLUSH" => 0xfef000,
+
+        // Codepage primitives
+        "SETCP0" => 0xff00,
+        "SETCPX" => 0xfff0,
+        "SETCP" => op_setcp,
     });
 }
 
@@ -1301,6 +1399,50 @@ fn op_jmp(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
 fn op_tryargs(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
     let (NatU4(s1), NatU4(s2)) = instr.parse_args()?;
     write_op_2sr(ctx, 0xf3, 8, s1, s2).with_span(instr.span)
+}
+
+fn op_getglob(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
+    let WithSpan(NatU5(n), span) = instr.parse_args()?;
+    if n == 0 {
+        return Err(AsmError::OutOfRange(span));
+    }
+    ctx.get_builder(16)
+        .store_u16(0xf840 | n as u16)
+        .with_span(instr.span)
+}
+
+fn op_setglob(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
+    let WithSpan(NatU5(n), span) = instr.parse_args()?;
+    if n == 0 {
+        return Err(AsmError::OutOfRange(span));
+    }
+    ctx.get_builder(16)
+        .store_u16(0xf860 | n as u16)
+        .with_span(instr.span)
+}
+
+fn op_debug(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
+    let WithSpan(NatU8(n), span) = instr.parse_args()?;
+    if n > 0xef {
+        return Err(AsmError::OutOfRange(span));
+    }
+    write_op_1sr_l(ctx, 0xfe, 8, n).with_span(instr.span)
+}
+
+fn op_dumpstktop(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
+    let WithSpan(NatU4(n), span) = instr.parse_args()?;
+    if n == 0 {
+        return Err(AsmError::OutOfRange(span));
+    }
+    write_op_1sr(ctx, 0xfe0, 12, n).with_span(instr.span)
+}
+
+fn op_setcp(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
+    let WithSpan(Nat(n), span) = instr.parse_args()?;
+    match n.to_i16() {
+        Some(n @ -14..=239) => write_op_1sr_l(ctx, 0xff, 8, n as u8).with_span(instr.span),
+        _ => Err(AsmError::OutOfRange(span)),
+    }
 }
 
 fn op_simple<const BASE: u32, const BITS: u16>(

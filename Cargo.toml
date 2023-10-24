@@ -1,7 +1,11 @@
 [package]
 name = "everscale-asm"
-version = "0.1.0"
+description = "Rust implementation of TVM Assembler"
+version = "0.0.1"
 edition = "2021"
+rust-version = "1.70"
+include = ["src/**/*.rs", "src/**/*.tvm", "LICENSE-*", "README.md"]
+license = "MIT OR Apache-2.0"
 
 [workspace]
 members = ["lsp-server"]
@@ -18,6 +22,3 @@ num-traits = "0.2"
 pest = "2.7"
 pest_derive = "2.7"
 thiserror = "1.0"
-
-[patch.crates-io]
-everscale-types = { git = "https://github.com/broxus/everscale-types.git" }

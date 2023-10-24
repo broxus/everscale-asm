@@ -2,7 +2,7 @@
 name = "tvm-lsp-server"
 description = "LSP server for the Rust implementation of TVM Assembler"
 repository = "https://github.com/broxus/everscale-asm"
-version = "0.0.1"
+version = "0.0.3"
 edition = "2021"
 rust-version = "1.70"
 include = ["src/**/*.rs", "src/**/*.tvm", "./LICENSE-*", "./README.md"]
@@ -20,4 +20,4 @@ tower-lsp = "0.20"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
-everscale-asm = { path = "../", version = "0.0.2" }
+everscale-asm = { path = "../", version = "0.0.3" }

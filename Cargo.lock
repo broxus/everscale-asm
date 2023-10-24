@@ -307,7 +307,7 @@ checksum = "a357d28ed41a50f9c765dbfe56cbc04a64e53e5fc58ba79fbc34c10ef3df831f"
 
 [[package]]
 name = "everscale-asm"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "ahash",
  "anyhow",
@@ -317,8 +317,6 @@ dependencies = [
  "hex",
  "num-bigint",
  "num-traits",
- "pest",
- "pest_derive",
  "thiserror",
 ]
 
@@ -1328,7 +1326,7 @@ dependencies = [
 
 [[package]]
 name = "tvm-lsp-server"
-version = "0.0.1"
+version = "0.0.3"
 dependencies = [
  "ahash",
  "anyhow",
@@ -1345,12 +1343,11 @@ dependencies = [
 
 [[package]]
 name = "tvmasm"
-version = "0.0.1"
+version = "0.0.3"
 dependencies = [
  "anyhow",
  "argh",
  "console",
- "either",
  "everscale-asm",
  "everscale-types",
  "serde_json",

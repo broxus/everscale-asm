@@ -1,3 +1,4 @@
 /target
 /.vscode
 /.idea
+/lsp-client/node_modules

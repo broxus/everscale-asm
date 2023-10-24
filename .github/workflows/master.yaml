@@ -73,3 +73,25 @@ jobs:
         with:
           command: clippy
           args: -- -D warnings
+
+  vscode-extension:
+    name: Build VSCode extension
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+
+      - name: Install bun
+        uses: oven-sh/setup-bun@v1
+
+      - name: Install dependencies
+        run: |
+          cd lsp-client
+          bun install
+          bunx vsce package -o tvm-lsp-client.vsix
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: tvm-lsp-client.vsix
+          path: tvm-lsp-client.vsix

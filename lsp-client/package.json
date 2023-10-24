@@ -2,6 +2,7 @@
   "name": "tvm-lsp-client-prerelease",
   "displayName": "TVM Language Support",
   "description": "Language client extension for TVM language server",
+  "publisher": "Rexagon",
   "license": "MIT",
   "version": "0.0.1",
   "engines": {

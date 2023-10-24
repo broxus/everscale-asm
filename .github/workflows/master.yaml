@@ -94,4 +94,4 @@ jobs:
         uses: actions/upload-artifact@v3
         with:
           name: tvm-lsp-client.vsix
-          path: tvm-lsp-client.vsix
+          path: lsp-client/tvm-lsp-client.vsix

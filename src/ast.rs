@@ -127,6 +127,14 @@ fn instr_ident<'a>() -> impl Parser<'a, &'a str, &'a str, extra::Err<ParserError
                     break 'char None;
                 };
 
+                if *first == '-' {
+                    chars.next();
+                }
+
+                let Some(first) = chars.peek() else {
+                    break 'char None;
+                };
+
                 if first.is_ascii_digit() {
                     chars.next();
                     let Some(second) = chars.next() else {

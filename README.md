@@ -12,7 +12,7 @@
 
 [rust-version-link]: https://blog.rust-lang.org/2023/06/01/Rust-1.70.0.html
 
-[workflow-badge]: https://img.shields.io/github/actions/workflow/status/broxus/everscale-asm/master.yml?branch=master
+[workflow-badge]: https://img.shields.io/github/actions/workflow/status/broxus/everscale-asm/master.yaml?branch=master
 
 [workflow-link]: https://github.com/broxus/everscale-asm/actions?query=workflow%3Amaster
 
@@ -62,6 +62,45 @@ let code: Cell = Code::assemble(r#"
     DROP
 "#)?;
 ```
+
+## Syntax
+
+```
+// Single-line comments
+
+// Opcodes must be in uppercase, can start with a digit or minus,
+// and can contain '#' or '_'
+NOP
+2DROP
+-ROT
+STREF_L
+
+// Opcodes with number as an argument
+PUSHINT 12
+PUSHINT -0xded
+PUSHINT 0b10110101
+
+// Opcodes with stack register as an argument
+PUSH s1
+XCHG s10, s100
+PU2XC s1, s(-1), s(-2)
+
+// Opcodes with control registers (c0, .., c5, c7)
+PUSH c3
+PUSHCTR c7
+
+// Opcodes with slice or continuation
+PUSHSLICE x{123123_}
+PUSHSLICE b{10001001}
+IFREFELSEREF {
+  PUSHINT 1
+}, {
+  PUSHINT 2
+}
+
+```
+
+[Full opcodes list](https://test.ton.org/tvm.pdf)
 
 ## Contributing
 

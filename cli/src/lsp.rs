@@ -1,22 +1,63 @@
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
+use anyhow::Context;
 use async_trait::async_trait;
 use either::Either;
 use tokio::sync::mpsc;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
-use tower_lsp::{Client, LanguageServer};
+use tower_lsp::{Client, LanguageServer, LspService, Server};
 
-use crate::util::*;
+use crate::util::{FastDashMap, Source};
 
-pub struct Backend {
+const DEFAULT_LOG_FILE: &'static str = "tvmasm-lsp.log";
+
+pub struct LspSettings {
+    pub log_file: Option<PathBuf>,
+}
+
+pub async fn serve(settings: LspSettings) -> anyhow::Result<()> {
+    let log_file_path = match settings.log_file {
+        None => std::env::temp_dir().join(DEFAULT_LOG_FILE),
+        Some(path) => path,
+    };
+
+    let open_log_file = move || {
+        std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_file_path)
+            .with_context(|| format!("Failed to open log file: {}", log_file_path.display()))
+    };
+
+    let stdin = tokio::io::stdin();
+    let stdout = tokio::io::stdout();
+
+    let env_filter = tracing_subscriber::EnvFilter::from_default_env();
+
+    open_log_file()?;
+    let subscriber = tracing_subscriber::FmtSubscriber::builder()
+        .with_writer(move || std::io::BufWriter::new(open_log_file().unwrap()))
+        .with_env_filter(env_filter)
+        .finish();
+
+    tracing::subscriber::set_global_default(subscriber).unwrap();
+
+    let (service, socket) = LspService::new(Backend::new);
+    Server::new(stdin, stdout, socket).serve(service).await;
+
+    Ok(())
+}
+
+struct Backend {
     client: Client,
     state: Arc<BackendState>,
 }
 
 impl Backend {
-    pub fn new(client: Client) -> Self {
+    fn new(client: Client) -> Self {
         Self {
             client: client.clone(),
             state: Arc::new(BackendState::new(client)),
@@ -266,8 +307,8 @@ impl BackendState {
                 let range = match err.span() {
                     None => Range::default(),
                     Some(span) => Range {
-                        start: source.byte_index_to_position(span.start)?,
-                        end: source.byte_index_to_position(span.end)?,
+                        start: source.byte_index_to_position(span.start)?.into(),
+                        end: source.byte_index_to_position(span.end)?.into(),
                     },
                 };
 
@@ -307,8 +348,8 @@ impl BackendState {
             .map(|err| -> anyhow::Result<Diagnostic> {
                 let span = err.span();
                 let range = Range {
-                    start: source.byte_index_to_position(span.start)?,
-                    end: source.byte_index_to_position(span.end)?,
+                    start: source.byte_index_to_position(span.start)?.into(),
+                    end: source.byte_index_to_position(span.end)?.into(),
                 };
 
                 Ok(Diagnostic {
@@ -346,43 +387,6 @@ impl BackendState {
     }
 }
 
-pub struct Source {
-    pub text: String,
-    pub line_lengths: Vec<usize>,
-}
-
-impl Source {
-    pub fn new(text: String) -> Self {
-        let line_lengths = text
-            .as_str()
-            .split_inclusive('\n')
-            .map(|x| x.len())
-            .collect();
-        Self { text, line_lengths }
-    }
-
-    pub fn byte_index_to_position(&self, index: usize) -> anyhow::Result<Position> {
-        if index == 0 {
-            return Ok(Position::default());
-        }
-
-        let mut chars_read = 0;
-        for (i, line_length) in self.line_lengths.iter().enumerate() {
-            let line_number = i;
-            let first_char_pos = chars_read;
-            let last_char_pos = chars_read + line_length;
-            if index >= first_char_pos && index < last_char_pos {
-                return Ok(Position {
-                    line: line_number as u32,
-                    character: (index - first_char_pos) as u32,
-                });
-            }
-            chars_read += line_length;
-        }
-        anyhow::bail!("source index out of range: {index}");
-    }
-}
-
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 enum FileAction {
     Open,
@@ -391,6 +395,15 @@ enum FileAction {
 }
 
 #[derive(Debug)]
-pub enum Job {
+enum Job {
     ComputeDiagnostics(Url),
+}
+
+impl From<crate::util::Position> for Position {
+    fn from(value: crate::util::Position) -> Self {
+        Self {
+            line: value.line as u32,
+            character: value.character as u32,
+        }
+    }
 }

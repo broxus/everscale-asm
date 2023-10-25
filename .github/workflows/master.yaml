@@ -86,12 +86,12 @@ jobs:
 
       - name: Install dependencies
         run: |
-          cd lsp-client
+          cd extension
           bun install
-          bunx vsce package -o tvm-lsp-client.vsix
+          bunx vsce package -o tvmasm-lsp.vsix
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v3
         with:
-          name: tvm-lsp-client.vsix
-          path: lsp-client/tvm-lsp-client.vsix
+          name: tvmasm-lsp.vsix
+          path: extension/tvmasm-lsp.vsix

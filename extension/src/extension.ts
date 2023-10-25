@@ -20,30 +20,31 @@ const getFromPath = (bin: string, def: string) => {
   return found || def;
 };
 
-const TVM_LSP_SERVER_BIN_NAME = "tvm-lsp-server";
+const TVMASM_BIN_NAME = "tvmasm";
 
 export async function activate(context: ExtensionContext) {
   const traceOutputChannel = window.createOutputChannel(
-    "TVM Language Server Trace"
+    "TVM Assembler Server Trace"
   );
-  traceOutputChannel.appendLine("TVM Language Server Trace");
+  traceOutputChannel.appendLine("TVM Assembler Server Trace");
 
-  const serverPathEnv = process.env["TVM_LSP_SERVER_PATH"];
+  const serverPathEnv = process.env["TVMASM_PATH"];
   const serverPathConfig = workspace
-    .getConfiguration("tvm")
+    .getConfiguration("tvmasm")
     .get<string>("languageServerPath");
   const defaultPath = getFromPath(
-    TVM_LSP_SERVER_BIN_NAME,
-    path.join(os.homedir(), "bin", TVM_LSP_SERVER_BIN_NAME)
+    TVMASM_BIN_NAME,
+    path.join(os.homedir(), "bin", TVMASM_BIN_NAME)
   );
   const serverPath = serverPathConfig || serverPathEnv || defaultPath;
   if (!fs.existsSync(serverPath)) {
-    window.showErrorMessage(`TVM Language Server not found at ${serverPath}`);
+    window.showErrorMessage(`TVM Assembler binary not found at ${serverPath}`);
     process.exit(1);
   }
 
   const run: Executable = {
     command: serverPath,
+    args: ["lsp"],
     options: {
       env: {
         ...process.env,
@@ -69,21 +70,21 @@ export async function activate(context: ExtensionContext) {
 
   const makeClient = () => {
     return new LanguageClient(
-      "tvm-lsp",
-      "Language client extension for TVM language server",
+      "tvmasm-lsp",
+      "Language client extension for TVM Assembler",
       serverOptions,
       clientOptions
     );
   };
 
   let disposable = commands.registerCommand(
-    "tvm.restartLanguageServer",
+    "tvmasm.restartLanguageServer",
     async () => {
       await deactivate();
       client = makeClient();
       await client.start();
 
-      window.showInformationMessage("Reloaded TVM Language Server");
+      window.showInformationMessage("Reloaded TVM language Server");
     }
   );
 

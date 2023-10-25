@@ -1,10 +1,10 @@
 {
-  "name": "tvm-lsp-client-prerelease",
-  "displayName": "TVM Language Support",
-  "description": "Language client extension for TVM language server",
+  "name": "tvmasm-lsp",
+  "displayName": "TVM Assembler",
+  "description": "Language client extension for TVM Assembler",
   "publisher": "Rexagon",
   "license": "MIT",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "engines": {
     "vscode": "^1.65.0"
   },
@@ -36,15 +36,15 @@
     ],
     "configuration": {
       "properties": {
-        "tvm.languageServerPath": {
+        "tvmasm.languageServerPath": {
           "type": "string",
-          "description": "Path to the tvm-lsp-server binary"
+          "description": "Path to the tvmasm binary"
         }
       }
     },
     "commands": [
       {
-        "command": "tvm.restartLanguageServer",
+        "command": "tvmasm.restartLanguageServer",
         "title": "TVM: Restart Language Server"
       }
     ]

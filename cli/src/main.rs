@@ -10,12 +10,15 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::util::*;
 
+mod lsp;
 mod util;
 
-fn main() -> ExitCode {
+#[tokio::main]
+async fn main() -> ExitCode {
     let ArgsOrVersion::<App>(app) = argh::from_env();
     let res = match app.cmd {
         Cmd::Build(cmd) => cmd.run(),
+        Cmd::Lsp(cmd) => cmd.run().await,
     };
 
     match res {
@@ -38,6 +41,7 @@ struct App {
 #[argh(subcommand)]
 enum Cmd {
     Build(CmdBuild),
+    Lsp(CmdLsp),
 }
 
 /// Builds .tvm file into a new cell with code
@@ -63,6 +67,7 @@ impl CmdBuild {
                 self.input.display()
             )
         })?;
+        let code = Source::new(code);
 
         let out = match self.out {
             Some(path) => path,
@@ -74,17 +79,15 @@ impl CmdBuild {
         };
         anyhow::ensure!(self.input != out, "Output file must not be an input file");
 
-        let meta = SourceMeta::new(&code);
-
-        let parsed = everscale_asm::Code::parse(&code);
+        let parsed = everscale_asm::Code::parse(&code.text);
         if !parsed.parser_errors().is_empty() {
             for error in parsed.parser_errors() {
-                if let Some(error) = error.as_report(&self.input, &code, &meta) {
+                if let Some(error) = error.as_report(&self.input, &code) {
                     eprintln!("{error}\n");
                 }
             }
 
-            print_asm_errors(&self.input, &code, &meta, &parsed.check());
+            print_asm_errors(&self.input, &code, &parsed.check());
             anyhow::bail!("Build failed");
         }
 
@@ -124,28 +127,41 @@ impl CmdBuild {
                 Ok(())
             }
             Err(_) => {
-                print_asm_errors(&self.input, &code, &meta, &parsed.check());
+                print_asm_errors(&self.input, &code, &parsed.check());
                 anyhow::bail!("Build failed");
             }
         }
     }
 }
 
-fn print_asm_errors(
-    path: &Path,
-    code: &str,
-    meta: &SourceMeta,
-    errors: &[everscale_asm::AsmError],
-) {
+/// Runs an LSP server
+#[derive(FromArgs)]
+#[argh(subcommand, name = "lsp")]
+struct CmdLsp {
+    /// optional path to the log output file
+    #[argh(option)]
+    log_file: Option<PathBuf>,
+}
+
+impl CmdLsp {
+    async fn run(self) -> Result<()> {
+        lsp::serve(lsp::LspSettings {
+            log_file: self.log_file,
+        })
+        .await
+    }
+}
+
+fn print_asm_errors(path: &Path, code: &Source, errors: &[everscale_asm::AsmError]) {
     for error in errors {
         match error {
-            everscale_asm::AsmError::Multiple(errors) => print_asm_errors(path, code, meta, errors),
+            everscale_asm::AsmError::Multiple(errors) => print_asm_errors(path, code, errors),
             everscale_asm::AsmError::ArgTypeMismatch {
                 found: everscale_asm::ArgType::Invalid,
                 ..
             } => continue,
             _ => {
-                if let Some(error) = error.as_report(path, code, meta) {
+                if let Some(error) = error.as_report(path, code) {
                     eprintln!("{error}\n");
                 }
             }
@@ -154,27 +170,17 @@ fn print_asm_errors(
 }
 
 trait AsReport {
-    fn as_report<'a>(
-        &'a self,
-        path: &'a Path,
-        code: &'a str,
-        meta: &'a SourceMeta,
-    ) -> Option<Report<'a>>;
+    fn as_report<'a>(&'a self, path: &'a Path, code: &'a Source) -> Option<Report<'a>>;
 }
 
 impl AsReport for everscale_asm::ParserError {
-    fn as_report<'a>(
-        &'a self,
-        path: &'a Path,
-        code: &'a str,
-        meta: &'a SourceMeta,
-    ) -> Option<Report<'a>> {
+    fn as_report<'a>(&'a self, path: &'a Path, code: &'a Source) -> Option<Report<'a>> {
         let span = self.span()?;
         Some(Report {
-            start: meta.byte_index_to_position(span.start).unwrap(),
-            end: meta.byte_index_to_position(span.end).unwrap(),
+            start: code.byte_index_to_position(span.start).unwrap(),
+            end: code.byte_index_to_position(span.end).unwrap(),
             file_name: path,
-            code,
+            code: &code.text,
             origin: "parser",
             error: self,
         })
@@ -182,18 +188,13 @@ impl AsReport for everscale_asm::ParserError {
 }
 
 impl AsReport for everscale_asm::AsmError {
-    fn as_report<'a>(
-        &'a self,
-        path: &'a Path,
-        code: &'a str,
-        meta: &'a SourceMeta,
-    ) -> Option<Report<'a>> {
+    fn as_report<'a>(&'a self, path: &'a Path, code: &'a Source) -> Option<Report<'a>> {
         let span = self.span();
         Some(Report {
-            start: meta.byte_index_to_position(span.start).unwrap(),
-            end: meta.byte_index_to_position(span.end).unwrap(),
+            start: code.byte_index_to_position(span.start).unwrap(),
+            end: code.byte_index_to_position(span.end).unwrap(),
             file_name: path,
-            code,
+            code: &code.text,
             origin: "asm",
             error: self,
         })

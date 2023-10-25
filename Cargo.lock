@@ -1325,32 +1325,23 @@ dependencies = [
 ]
 
 [[package]]
-name = "tvm-lsp-server"
-version = "0.0.3"
+name = "tvmasm"
+version = "0.0.4"
 dependencies = [
  "ahash",
  "anyhow",
+ "argh",
  "async-trait",
+ "console",
  "dashmap",
  "either",
  "everscale-asm",
+ "everscale-types",
  "serde_json",
  "tokio",
  "tower-lsp",
  "tracing",
  "tracing-subscriber",
-]
-
-[[package]]
-name = "tvmasm"
-version = "0.0.3"
-dependencies = [
- "anyhow",
- "argh",
- "console",
- "everscale-asm",
- "everscale-types",
- "serde_json",
  "unicode-width",
 ]
 

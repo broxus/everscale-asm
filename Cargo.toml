@@ -9,7 +9,7 @@ include = ["src/**/*.rs", "src/**/*.tvm", "./LICENSE-*", "./README.md"]
 license = "MIT OR Apache-2.0"
 
 [workspace]
-members = ["lsp-server", "cli"]
+members = ["cli"]
 
 [dependencies]
 ahash = "0.8"

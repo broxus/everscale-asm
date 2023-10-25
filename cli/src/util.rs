@@ -1,13 +1,20 @@
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-pub struct SourceMeta {
+pub type FastDashMap<K, V> = dashmap::DashMap<K, V, ahash::RandomState>;
+
+pub struct Source {
+    pub text: String,
     pub line_lengths: Vec<usize>,
 }
 
-impl SourceMeta {
-    pub fn new(text: &str) -> Self {
-        let line_lengths = text.split_inclusive('\n').map(|x| x.len()).collect();
-        Self { line_lengths }
+impl Source {
+    pub fn new(text: String) -> Self {
+        let line_lengths = text
+            .as_str()
+            .split_inclusive('\n')
+            .map(|x| x.len())
+            .collect();
+        Self { text, line_lengths }
     }
 
     pub fn byte_index_to_position(&self, index: usize) -> anyhow::Result<Position> {

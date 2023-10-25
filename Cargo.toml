@@ -2,7 +2,7 @@
 name = "everscale-asm"
 description = "Rust implementation of TVM Assembler"
 repository = "https://github.com/broxus/everscale-asm"
-version = "0.0.4"
+version = "0.0.5"
 edition = "2021"
 rust-version = "1.70"
 include = ["src/**/*.rs", "src/**/*.tvm", "./LICENSE-*", "./README.md"]

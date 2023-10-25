@@ -32,7 +32,7 @@ Rust implementation of TVM Assembler.
 
 ## How to use
 
-### Build a contract using CLI
+### Building a contract using CLI
 ```bash
 tvmasm build ./src/tests/walletv3.tvm -o walletv3.boc
 ```
@@ -97,7 +97,6 @@ IFREFELSEREF {
 }, {
   PUSHINT 2
 }
-
 ```
 
 [Full opcodes list](https://test.ton.org/tvm.pdf)

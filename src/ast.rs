@@ -190,6 +190,11 @@ fn nat<'a>() -> impl Parser<'a, &'a str, BigInt, extra::Err<ParserError>> + Clon
         just('-').ignore_then(number).map(std::ops::Neg::neg),
         number,
     ))
+    .then_ignore(empty().and_is(choice((
+        end(),
+        text::whitespace().at_least(1),
+        just(',').ignored(),
+    ))))
 }
 
 fn stack_register<'a>() -> impl Parser<'a, &'a str, Option<i16>, extra::Err<ParserError>> + Clone {
@@ -490,6 +495,21 @@ mod tests {
         let (output, errors) = parse(CODE).into_output_errors();
         println!("OUTPUT: {:#?}", output);
         println!("ERRORS: {:#?}", errors);
+
+        assert!(output.is_some());
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn example_asm() {
+        const CODE: &str = include_str!("tests/example.tvm");
+
+        let (output, errors) = parse(CODE).into_output_errors();
+        println!("OUTPUT: {:#?}", output);
+        println!("ERRORS: {:#?}", errors);
+
+        assert!(output.is_some());
+        assert!(errors.is_empty());
     }
 
     #[test]
@@ -499,5 +519,26 @@ mod tests {
         let (output, errors) = parse(CODE).into_output_errors();
         println!("OUTPUT: {:#?}", output);
         println!("ERRORS: {:#?}", errors);
+
+        assert!(output.is_some());
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn strange_opcodes() {
+        let (output, errors) = parse(
+            r#"
+        NOP
+        2DROP
+        OVER
+        LESSINT 2
+        "#,
+        )
+        .into_output_errors();
+        println!("OUTPUT: {:#?}", output);
+        println!("ERRORS: {:#?}", errors);
+
+        assert!(output.is_some());
+        assert!(errors.is_empty());
     }
 }

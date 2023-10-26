@@ -2,7 +2,7 @@
 name = "tvmasm"
 description = "CLI for TVM Assembler"
 repository = "https://github.com/broxus/everscale-asm"
-version = "0.0.6"
+version = "0.0.7"
 edition = "2021"
 rust-version = "1.70"
 include = ["src/**/*.rs", "src/**/*.tvm", "./LICENSE-*", "./README.md"]
@@ -23,5 +23,5 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 unicode-width = "0.1"
 
-everscale-types = { version = "0.1.0-rc.6", default-features = false }
-everscale-asm = { path = "../", version = "0.0.5" }
+everscale-types = { version = "0.1.0-rc.6", default-features = false, features = ["sync"] }
+everscale-asm = { path = "../", version = "=0.0.6" }

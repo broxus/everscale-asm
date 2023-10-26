@@ -45,6 +45,8 @@ Unique bits:    888
 ```
 
 ### Building a contract from Rust
+
+Runtime:
 ```rust
 use everscale_asm::Code;
 use everscale_types::prelude::Cell;
@@ -61,6 +63,21 @@ let code: Cell = Code::assemble(r#"
     REPEAT
     DROP
 "#)?;
+```
+
+Compile time:
+```rust
+use everscale_asm_macros::tvmasm;
+use everscale_types::prelude::{Boc, Cell};
+
+const CODE: &[u8] = tvmasm!(
+    "PUSHINT 1",
+    "PUSHCONT { INC PUSHINT 10 LESS }",
+    "PUSHCONT { DUMPSTK }",
+    "WHILE",
+);
+
+let code: Cell = Boc::decode(CODE)?;
 ```
 
 ## Syntax

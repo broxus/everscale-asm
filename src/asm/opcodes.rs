@@ -213,9 +213,9 @@ fn register_stackops(t: &mut Opcodes) {
         "PUXCPU" => 0x545(s, s, s, adj = 0x011),
         "PU2XC" => 0x546(s, s, s, adj = 0x012),
         "PUSH3" => 0x547(s, s, s),
-        // TODO: BLKSWAP
-        // TODO: ROLL
-        // TODO: -ROLL | ROLLREV
+        "BLKSWAP" => op_blkswap,
+        "ROLL" => op_roll,
+        "-ROLL" | "ROLLREV" => op_rollrev,
         "2ROT" | "ROT2" => 0x5513,
 
         // Exotic stack primitives
@@ -225,9 +225,9 @@ fn register_stackops(t: &mut Opcodes) {
         "2DROP" | "DROP2" => 0x5b,
         "2DUP" | "DUP2" => 0x5c,
         "2OVER" | "OVER2" => 0x5d,
-        // TODO: REVERSE
+        "REVERSE" => op_reverse,
         "BLKDROP" => 0x5f0(u4),
-        // TODO: BLKPUSH
+        "BLKPUSH" => op_blkpush,
         "PICK" | "PUSHX" => 0x60,
         "ROLLX" => 0x61,
         "-ROLLX" | "ROLLREVX" => 0x62,
@@ -240,7 +240,7 @@ fn register_stackops(t: &mut Opcodes) {
         "CHKDEPTH" => 0x69,
         "ONLYTOPX" => 0x6a,
         "ONLYX" => 0x6b,
-        // TODO: BLKDROP2
+        "BLKDROP2" => op_blkdrop2,
 
         // Null primitives
         "NULL" | "PUSHNULL" | "NEWDICT" => 0x6d,
@@ -1033,7 +1033,7 @@ fn register_stackops(t: &mut Opcodes) {
 
         // Debug primitives
         "DEBUG" => op_debug,
-        // TODO: "DEBUGSTR" | "DUMPTOSFMT"
+        "DEBUGSTR" | "DUMPTOSFMT" => op_debugstr,
         // TODO: "DEBUGSTRI"
 
         "DUMPSTK" => 0xfe00,
@@ -1125,6 +1125,50 @@ fn op_pop(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
         Either::Right(CReg(c)) => ctx.get_builder(16).store_u16(0xed50 | c as u16),
     }
     .with_span(instr.span)
+}
+
+fn op_blkswap(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
+    let (NatU4minus::<1>(s1), NatU4minus::<1>(s2)) = instr.parse_args()?;
+    write_op_2sr(ctx, 0x55, 8, s1, s2).with_span(instr.span)
+}
+
+fn op_roll(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
+    let NatU4minus::<1>(s2) = instr.parse_args()?;
+    if s2 > 0 {
+        write_op_2sr(ctx, 0x55, 8, 0, s2).with_span(instr.span)
+    } else {
+        Ok(())
+    }
+}
+
+fn op_rollrev(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
+    let NatU4minus::<1>(s1) = instr.parse_args()?;
+    if s1 > 0 {
+        write_op_2sr(ctx, 0x55, 8, s1, 0).with_span(instr.span)
+    } else {
+        Ok(())
+    }
+}
+
+fn op_reverse(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
+    let (NatU4minus::<2>(s1), NatU4(s2)) = instr.parse_args()?;
+    write_op_2sr(ctx, 0x5e, 8, s1, s2).with_span(instr.span)
+}
+
+fn op_blkpush(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
+    let (WithSpan(NatU4(s1), arg_span), NatU4(s2)) = instr.parse_args()?;
+    if s1 == 0 {
+        return Err(AsmError::OutOfRange(arg_span));
+    }
+    write_op_2sr(ctx, 0x5f, 8, s1, s2).with_span(instr.span)
+}
+
+fn op_blkdrop2(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
+    let (WithSpan(NatU4(s1), arg_span), NatU4(s2)) = instr.parse_args()?;
+    if s1 == 0 {
+        return Err(AsmError::OutOfRange(arg_span));
+    }
+    write_op_2sr(ctx, 0x6c, 8, s1, s2).with_span(instr.span)
 }
 
 fn op_index2(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
@@ -1543,6 +1587,35 @@ fn op_debug(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
     write_op_1sr_l(ctx, 0xfe, 8, n).with_span(instr.span)
 }
 
+fn op_debugstr(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
+    let WithSpan(Slice(s), span) = instr.parse_args()?;
+    let bit_len = s.bit_len();
+    if bit_len % 8 != 0 {
+        return Err(AsmError::WrongUsage {
+            details: "arg bit len is not multiple of 8",
+            span,
+        });
+    } else if bit_len == 0 {
+        return Err(AsmError::WrongUsage {
+            details: "expected a non-empty string",
+            span,
+        });
+    } else if bit_len > 64 {
+        return Err(AsmError::WrongUsage {
+            details: "arg bit len is too big",
+            span,
+        });
+    }
+
+    fn write_debugstr(ctx: &mut Context, s: &DynCell) -> Result<(), Error> {
+        let bit_len = s.bit_len();
+        let b = ctx.get_builder(12 + 4 + bit_len);
+        b.store_u16(0xfef0 | ((bit_len / 8) - 1))?;
+        b.store_raw(s.data(), bit_len)
+    }
+    write_debugstr(ctx, s.as_ref()).with_span(instr.span)
+}
+
 fn op_dumpstktop(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
     let WithSpan(NatU4(n), span) = instr.parse_args()?;
     if n == 0 {
@@ -1587,7 +1660,7 @@ fn op_u8_minus1<const BASE: u32, const BITS: u16>(
     ctx: &mut Context,
     instr: &ast::Instr<'_>,
 ) -> Result<(), AsmError> {
-    let NatU8minus1(s1) = instr.parse_args()?;
+    let NatU8minus::<1>(s1) = instr.parse_args()?;
     write_op_1sr_l(ctx, BASE, BITS, s1).with_span(instr.span)
 }
 

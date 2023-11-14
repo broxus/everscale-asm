@@ -204,6 +204,28 @@ impl FromInstrArg<'_> for NatU4 {
     }
 }
 
+pub struct NatU4minus<const N: u8>(pub u8);
+
+impl<const N: u8> FromInstrArg<'_> for NatU4minus<N> {
+    fn from_instr_arg(arg: &'_ ast::InstrArg<'_>) -> Result<Self, AsmError> {
+        match &arg.value {
+            ast::InstrArgValue::Nat(n) => {
+                if let Some(n) = n.to_u8() {
+                    if (N..=15 + N).contains(&n) {
+                        return Ok(Self(n - N));
+                    }
+                }
+                Err(AsmError::OutOfRange(arg.span))
+            }
+            _ => Err(AsmError::ArgTypeMismatch {
+                span: arg.span,
+                expected: ArgType::Nat.expected_exact(),
+                found: arg.value.ty(),
+            }),
+        }
+    }
+}
+
 pub struct NatU5(pub u8);
 
 impl FromInstrArg<'_> for NatU5 {
@@ -244,15 +266,15 @@ impl FromInstrArg<'_> for NatU8 {
     }
 }
 
-pub struct NatU8minus1(pub u8);
+pub struct NatU8minus<const N: u16>(pub u8);
 
-impl FromInstrArg<'_> for NatU8minus1 {
+impl<const N: u16> FromInstrArg<'_> for NatU8minus<N> {
     fn from_instr_arg(arg: &'_ ast::InstrArg<'_>) -> Result<Self, AsmError> {
         match &arg.value {
             ast::InstrArgValue::Nat(n) => {
                 if let Some(n) = n.to_u16() {
-                    if (1..=256).contains(&n) {
-                        return Ok(Self((n - 1) as u8));
+                    if (N..=255 + N).contains(&n) {
+                        return Ok(Self((n - N) as u8));
                     }
                 }
                 Err(AsmError::OutOfRange(arg.span))
@@ -339,6 +361,21 @@ impl FromInstrArg<'_> for CReg {
             _ => Err(AsmError::ArgTypeMismatch {
                 span: arg.span,
                 expected: ArgType::ControlRegister.expected_exact(),
+                found: arg.value.ty(),
+            }),
+        }
+    }
+}
+
+pub struct Slice(pub Cell);
+
+impl FromInstrArg<'_> for Slice {
+    fn from_instr_arg(arg: &ast::InstrArg<'_>) -> Result<Self, AsmError> {
+        match &arg.value {
+            ast::InstrArgValue::Slice(cell) => Ok(Self(cell.clone())),
+            _ => Err(AsmError::ArgTypeMismatch {
+                span: arg.span,
+                expected: ArgType::Slice.expected_or(ArgType::Block),
                 found: arg.value.ty(),
             }),
         }

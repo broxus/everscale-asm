@@ -187,16 +187,22 @@ fn visit_asm_errors<F>(errors: &[everscale_asm::AsmError], mut f: F)
 where
     F: FnMut(&everscale_asm::AsmError),
 {
-    for error in errors {
-        match error {
-            everscale_asm::AsmError::Multiple(errors) => visit_asm_errors(errors, &mut f),
-            everscale_asm::AsmError::ArgTypeMismatch {
-                found: everscale_asm::ArgType::Invalid,
-                ..
-            } => continue,
-            _ => f(error),
+    fn visit_asm_errors_impl<F>(errors: &[everscale_asm::AsmError], f: &mut F)
+    where
+        F: FnMut(&everscale_asm::AsmError),
+    {
+        for error in errors {
+            match error {
+                everscale_asm::AsmError::Multiple(errors) => visit_asm_errors_impl(errors, f),
+                everscale_asm::AsmError::ArgTypeMismatch {
+                    found: everscale_asm::ArgType::Invalid,
+                    ..
+                } => continue,
+                _ => f(error),
+            }
         }
     }
+    visit_asm_errors_impl(errors, &mut f)
 }
 
 fn to_compile_errors(errors: Vec<syn::Error>) -> proc_macro2::TokenStream {

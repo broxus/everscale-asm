@@ -29,3 +29,6 @@ IFREFELSEREF {
 }, {
   PUSHINT 2
 }
+
+// Insert raw slices into code
+@inline x{a924}

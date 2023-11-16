@@ -2,4 +2,4 @@
 /.vscode
 /.idea
 /lsp-client/node_modules
-/*.boc
+/**/*.boc

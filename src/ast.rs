@@ -15,7 +15,13 @@ pub fn parse(s: &'_ str) -> ParseResult<Code<'_>, ParserError> {
 #[derive(Debug, Clone)]
 pub struct Code<'a> {
     pub span: Span,
-    pub items: Vec<Instr<'a>>,
+    pub items: Vec<Stmt<'a>>,
+}
+
+#[derive(Debug, Clone)]
+pub enum Stmt<'a> {
+    Instr(Instr<'a>),
+    Inline(Inline<'a>),
 }
 
 #[derive(Debug, Clone)]
@@ -24,6 +30,12 @@ pub struct Instr<'a> {
     pub ident_span: Span,
     pub ident: &'a str,
     pub args: Vec<InstrArg<'a>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Inline<'a> {
+    pub span: Span,
+    pub value: InstrArg<'a>,
 }
 
 #[derive(Debug, Clone)]
@@ -38,12 +50,12 @@ pub enum InstrArgValue<'a> {
     SReg(i16),
     CReg(u8),
     Slice(Cell),
-    Block(Vec<Instr<'a>>),
+    Block(Vec<Stmt<'a>>),
     Invalid,
 }
 
 fn parser<'a>() -> impl Parser<'a, &'a str, Code<'a>, extra::Err<ParserError>> {
-    instr()
+    stmt()
         .recover_with(skip_then_retry_until(any().ignored(), text::newline()))
         .padded()
         .repeated()
@@ -54,7 +66,28 @@ fn parser<'a>() -> impl Parser<'a, &'a str, Code<'a>, extra::Err<ParserError>> {
         })
 }
 
-fn instr<'a>() -> impl Parser<'a, &'a str, Instr<'a>, extra::Err<ParserError>> {
+fn stmt<'a>() -> impl Parser<'a, &'a str, Stmt<'a>, extra::Err<ParserError>> {
+    recursive(|stmt| {
+        let inline = just("@inline")
+            .padded_by(comment().repeated())
+            .padded()
+            .ignore_then(instr_arg(stmt.clone()))
+            .map_with(|value, e| {
+                Stmt::Inline(Inline {
+                    value,
+                    span: e.span(),
+                })
+            });
+
+        let instr = instr(stmt).map(Stmt::Instr);
+
+        choice((inline, instr))
+    })
+}
+
+fn instr<'a>(
+    stmt: Recursive<dyn Parser<'a, &'a str, Stmt<'a>, extra::Err<ParserError>> + 'a>,
+) -> impl Parser<'a, &'a str, Instr<'a>, extra::Err<ParserError>> + Clone {
     fn compute_min_span(ident_span: Span, args: &[InstrArg<'_>]) -> Span {
         let mut res = ident_span;
         for arg in args {
@@ -64,54 +97,60 @@ fn instr<'a>() -> impl Parser<'a, &'a str, Instr<'a>, extra::Err<ParserError>> {
         res
     }
 
-    recursive(|instr| {
-        let comment = just("//")
-            .then(any().and_is(just('\n').not()).repeated())
-            .padded()
-            .ignored();
+    let comment = comment();
 
-        let instr_arg = choice((
-            nat().map(InstrArgValue::Nat),
-            stack_register().map(|idx| {
-                idx.map(InstrArgValue::SReg)
-                    .unwrap_or(InstrArgValue::Invalid)
-            }),
-            control_register().map(|idx| {
-                idx.map(InstrArgValue::CReg)
-                    .unwrap_or(InstrArgValue::Invalid)
-            }),
-            cont_block(instr).map(InstrArgValue::Block),
-            cell_slice().map(|slice| {
-                slice
-                    .map(InstrArgValue::Slice)
-                    .unwrap_or(InstrArgValue::Invalid)
-            }),
-        ))
-        .map_with(|value, e| InstrArg {
-            value,
-            span: e.span(),
-        });
+    let args = instr_arg(stmt)
+        .padded_by(comment.clone().repeated())
+        .separated_by(just(',').padded().recover_with(skip_then_retry_until(
+            any().ignored(),
+            choice((just(',').ignored(), text::newline())),
+        )))
+        .collect::<Vec<_>>();
 
-        let args = instr_arg
-            .padded_by(comment.repeated())
-            .separated_by(just(',').padded().recover_with(skip_then_retry_until(
-                any().ignored(),
-                choice((just(',').ignored(), text::newline())),
-            )))
-            .collect::<Vec<_>>();
+    instr_ident()
+        .map_with(|ident, e| (ident, e.span()))
+        .padded_by(comment.repeated())
+        .padded()
+        .then(args)
+        .map(|((ident, ident_span), args)| Instr {
+            span: compute_min_span(ident_span, &args),
+            ident,
+            ident_span,
+            args,
+        })
+}
 
-        instr_ident()
-            .map_with(|ident, e| (ident, e.span()))
-            .padded_by(comment.repeated())
-            .padded()
-            .then(args)
-            .map(|((ident, ident_span), args)| Instr {
-                span: compute_min_span(ident_span, &args),
-                ident,
-                ident_span,
-                args,
-            })
+fn instr_arg<'a>(
+    stmt: Recursive<dyn Parser<'a, &'a str, Stmt<'a>, extra::Err<ParserError>> + 'a>,
+) -> impl Parser<'a, &'a str, InstrArg<'a>, extra::Err<ParserError>> + Clone {
+    choice((
+        nat().map(InstrArgValue::Nat),
+        stack_register().map(|idx| {
+            idx.map(InstrArgValue::SReg)
+                .unwrap_or(InstrArgValue::Invalid)
+        }),
+        control_register().map(|idx| {
+            idx.map(InstrArgValue::CReg)
+                .unwrap_or(InstrArgValue::Invalid)
+        }),
+        cont_block(stmt).map(InstrArgValue::Block),
+        cell_slice().map(|slice| {
+            slice
+                .map(InstrArgValue::Slice)
+                .unwrap_or(InstrArgValue::Invalid)
+        }),
+    ))
+    .map_with(|value, e| InstrArg {
+        value,
+        span: e.span(),
     })
+}
+
+fn comment<'a>() -> impl Parser<'a, &'a str, (), extra::Err<ParserError>> + Clone {
+    just("//")
+        .then(any().and_is(just('\n').not()).repeated())
+        .padded()
+        .ignored()
 }
 
 fn instr_ident<'a>() -> impl Parser<'a, &'a str, &'a str, extra::Err<ParserError>> + Clone {
@@ -251,9 +290,9 @@ fn control_register<'a>() -> impl Parser<'a, &'a str, Option<u8>, extra::Err<Par
 }
 
 fn cont_block<'a>(
-    instr: Recursive<dyn Parser<'a, &'a str, Instr<'a>, extra::Err<ParserError>> + 'a>,
-) -> impl Parser<'a, &'a str, Vec<Instr<'a>>, extra::Err<ParserError>> + Clone {
-    instr.padded().repeated().collect().delimited_by(
+    stmt: Recursive<dyn Parser<'a, &'a str, Stmt<'a>, extra::Err<ParserError>> + 'a>,
+) -> impl Parser<'a, &'a str, Vec<Stmt<'a>>, extra::Err<ParserError>> + Clone {
+    stmt.padded().repeated().collect().delimited_by(
         just('{'),
         just('}')
             .ignored()

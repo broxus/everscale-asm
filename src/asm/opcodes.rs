@@ -38,14 +38,24 @@ impl Context {
         }
     }
 
-    pub fn add_instr(&mut self, opcodes: &Opcodes, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
-        let Some(handler) = opcodes.get(instr.ident) else {
-            return Err(AsmError::UnknownOpcode {
-                name: instr.ident.into(),
-                span: instr.ident_span,
-            });
-        };
-        (handler)(self, instr)
+    pub fn add_stmt(&mut self, opcodes: &Opcodes, stmt: &ast::Stmt<'_>) -> Result<(), AsmError> {
+        match stmt {
+            ast::Stmt::Inline(inline) => {
+                let Slice(slice) = inline.parse_args()?;
+                self.get_builder(slice.bit_len())
+                    .store_cell_data(slice)
+                    .with_span(inline.span)
+            }
+            ast::Stmt::Instr(instr) => {
+                let Some(handler) = opcodes.get(instr.ident) else {
+                    return Err(AsmError::UnknownOpcode {
+                        name: instr.ident.into(),
+                        span: instr.ident_span,
+                    });
+                };
+                (handler)(self, instr)
+            }
+        }
     }
 
     pub fn into_builder(self, block_span: ast::Span) -> Result<CellBuilder, AsmError> {
@@ -1807,7 +1817,7 @@ impl<'a> SliceOrCont<'a> {
                     let mut errors = Vec::new();
 
                     for item in items {
-                        if let Err(e) = context.add_instr(opcodes, item) {
+                        if let Err(e) = context.add_stmt(opcodes, item) {
                             errors.push(e);
                         }
                     }
@@ -1826,7 +1836,7 @@ impl<'a> SliceOrCont<'a> {
                     }
                 } else {
                     for item in items {
-                        context.add_instr(opcodes, item)?;
+                        context.add_stmt(opcodes, item)?;
                     }
 
                     context

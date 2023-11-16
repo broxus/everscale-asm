@@ -6,12 +6,12 @@ use everscale_types::prelude::*;
 use self::opcodes::{cp0, Context};
 use crate::ast;
 
-pub fn assemble(ast: &[ast::Instr], span: ast::Span) -> Result<Cell, AsmError> {
+pub fn assemble(ast: &[ast::Stmt], span: ast::Span) -> Result<Cell, AsmError> {
     let opcodes = cp0();
 
     let mut context = Context::new();
-    for instr in ast {
-        context.add_instr(opcodes, instr)?;
+    for stmt in ast {
+        context.add_stmt(opcodes, stmt)?;
     }
 
     context
@@ -20,14 +20,14 @@ pub fn assemble(ast: &[ast::Instr], span: ast::Span) -> Result<Cell, AsmError> {
         .map_err(|e| AsmError::StoreError { inner: e, span })
 }
 
-pub fn check(ast: &[ast::Instr], span: ast::Span) -> Vec<AsmError> {
+pub fn check(ast: &[ast::Stmt], span: ast::Span) -> Vec<AsmError> {
     let opcodes = cp0();
 
     let mut errors = Vec::new();
     let mut context = Context::new();
     context.set_allow_invalid();
-    for instr in ast {
-        if let Err(e) = context.add_instr(opcodes, instr) {
+    for stmt in ast {
+        if let Err(e) = context.add_stmt(opcodes, stmt) {
             errors.push(e);
         }
     }

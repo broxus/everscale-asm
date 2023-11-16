@@ -114,6 +114,9 @@ IFREFELSEREF {
 }, {
   PUSHINT 2
 }
+
+// Insert raw slices into code
+@inline x{a924}
 ```
 
 [Full opcodes list](https://test.ton.org/tvm.pdf)

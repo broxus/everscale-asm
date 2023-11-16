@@ -63,7 +63,7 @@ impl<'a> Code<'a> {
 pub struct ValidCode<'a> {
     _text: &'a str,
     span: ast::Span,
-    ast: Vec<ast::Instr<'a>>,
+    ast: Vec<ast::Stmt<'a>>,
 }
 
 impl ValidCode<'_> {

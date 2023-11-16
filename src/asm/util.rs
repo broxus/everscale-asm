@@ -19,6 +19,13 @@ impl ParseArgs for ast::Instr<'_> {
     }
 }
 
+impl ParseArgs for ast::Inline<'_> {
+    #[inline]
+    fn parse_args<'a, T: FromInstrArgs<'a>>(&'a self) -> Result<T, AsmError> {
+        T::from_instr_args(self.span, std::slice::from_ref(&self.value))
+    }
+}
+
 pub trait FromInstrArgs<'a>: Sized {
     fn from_instr_args(
         instr_span: ast::Span,
@@ -382,7 +389,7 @@ impl FromInstrArg<'_> for Slice {
     }
 }
 
-pub struct SliceOrCont<'a>(pub Either<Cell, (&'a [ast::Instr<'a>], ast::Span)>);
+pub struct SliceOrCont<'a>(pub Either<Cell, (&'a [ast::Stmt<'a>], ast::Span)>);
 
 impl<'a> FromInstrArg<'a> for SliceOrCont<'a> {
     fn from_instr_arg(arg: &'a ast::InstrArg<'_>) -> Result<Self, AsmError> {

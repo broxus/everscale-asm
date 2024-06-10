@@ -12,7 +12,7 @@ use tower_lsp::{Client, LanguageServer, LspService, Server};
 
 use crate::util::{FastDashMap, Source};
 
-const DEFAULT_LOG_FILE: &'static str = "tvmasm-lsp.log";
+const DEFAULT_LOG_FILE: &str = "tvmasm-lsp.log";
 
 pub struct LspSettings {
     pub log_file: Option<PathBuf>,

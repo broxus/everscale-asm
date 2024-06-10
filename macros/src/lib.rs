@@ -74,7 +74,7 @@ fn compile_inline(
 
 fn compile_file(input: &syn::LitStr) -> Result<proc_macro2::TokenStream, Vec<syn::Error>> {
     let root = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".into());
-    let full_path = Path::new(&root).join("src/").join(&input.value());
+    let full_path = Path::new(&root).join("src/").join(input.value());
     if full_path.file_name().is_none() {
         return Err(vec![syn::Error::new_spanned(
             input.into_token_stream(),

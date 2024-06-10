@@ -1,24 +1,33 @@
-[package]
-name = "everscale-asm"
-description = "Rust implementation of TVM Assembler"
-repository = "https://github.com/broxus/everscale-asm"
-version = "0.0.6"
+[workspace.package]
 edition = "2021"
-rust-version = "1.70"
-include = ["src/**/*.rs", "src/**/*.tvm", "./LICENSE-*", "./README.md"]
+rust-version = "1.77.1"
+repository = "https://github.com/broxus/everscale-asm"
 license = "MIT OR Apache-2.0"
 
 [workspace]
-members = ["cli", "macros"]
+resolver = "2"
+members = ["cli", "macros", "asm"]
 
-[dependencies]
+[workspace.dependencies]
 ahash = "0.8"
 anyhow = "1.0"
-chumsky = "1.0.0-alpha.6"
-either = "1.0"
+argh = "0.1"
+async-trait = "0.1"
+chumsky = "1.0.0-alpha.7"
+console = "0.15"
+dashmap = "5.5"
+either = "1.9"
+everscale-types = "0.1.0-rc.7"
 hex = "0.4"
 num-bigint = "0.4"
 num-traits = "0.2"
+proc-macro2 = "1.0"
+quote = "1.0"
+serde_json = "1.0"
+syn = "2.0"
 thiserror = "1.0"
-
-everscale-types = { version = "0.1.0-rc.6", default-features = false }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "io-std"] }
+tower-lsp = "0.20"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+unicode-width = "0.1"

@@ -1,20 +1,20 @@
 [package]
 name = "everscale-asm-macros"
+version = "0.0.8"
 description = "Macros for Rust implementation of TVM Assembler"
-repository = "https://github.com/broxus/everscale-asm"
-version = "0.0.1"
-edition = "2021"
-rust-version = "1.70"
 include = ["src/**/*.rs", "src/**/*.tvm", "./LICENSE-*", "./README.md"]
-license = "MIT OR Apache-2.0"
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+license.workspace = true
 
 [lib]
 proc-macro = true
 
 [dependencies]
-proc-macro2 = "1.0"
-quote = "1.0"
-syn = { version = "2.0", features = ["parsing"] }
+everscale-types = { workspace = true }
+proc-macro2 = { workspace = true }
+quote = { workspace = true }
+syn = { workspace = true, features = ["parsing"] }
 
-everscale-types = { version = "0.1.0-rc.6", default-features = false }
-everscale-asm = { path = "../", version = "0.0.6" }
+everscale-asm = { path = "../asm", version = "0.0.8" }

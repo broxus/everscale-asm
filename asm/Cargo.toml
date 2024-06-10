@@ -1,0 +1,20 @@
+[package]
+name = "everscale-asm"
+version = "0.0.8"
+description = "Rust implementation of TVM Assembler"
+include = ["src/**/*.rs", "src/**/*.tvm", "./LICENSE-*", "./README.md"]
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+ahash = { workspace = true }
+anyhow = { workspace = true }
+chumsky = { workspace = true }
+either = { workspace = true }
+everscale-types = { workspace = true }
+hex = { workspace = true }
+num-bigint = { workspace = true }
+num-traits = { workspace = true }
+thiserror = { workspace = true }

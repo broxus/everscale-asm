@@ -81,6 +81,39 @@ mod tests {
     use super::*;
 
     #[test]
+    fn preprocessed_wallet() -> anyhow::Result<()> {
+        let cell = Code::assemble(
+            r##"
+            SETCP0 IFNOTRET                 // msg
+            LDREF SWAP DUP HASHCU           // sign msg' hash
+            SWAP CTOS LDU 64 LDU 16 PLDREF  // sign hash valid_until msg_seqno actions
+            PUSH c4 CTOS                    // sign hash valid_until msg_seqno actions c4s
+            LDU 256 PLDU 16                 // sign hash valid_until msg_seqno actions key seqno
+            DUP INC PUSHPOW2 16 MOD PUSH s2 // sign hash valid_until msg_seqno actions key seqno new_seqno key
+            NEWC STU 256 STU 16 ENDC POP c4 // sign hash valid_until msg_seqno actions key seqno
+            XCHG3 s4, s3, s0                // sign hash actions key valid_until seqno
+            XCHG s4, s6                     // actions hash sign key valid_until seqno
+            EQUAL THROWIFNOT 33             // actions hash sign key valid_until
+            NOW GEQ THROWIFNOT 34           // actions hash sign key
+            CHKSIGNU THROWIFNOT 35          // actions
+            ACCEPT                          // actions
+            POP c5
+            "##,
+        )?;
+
+        assert_eq!(
+            cell.repr_hash(),
+            &"45ebbce9b5d235886cb6bfe1c3ad93b708de058244892365c9ee0dfe439cb7b5"
+                .parse::<HashBytes>()
+                .unwrap()
+        );
+
+        println!("{}", cell.display_tree());
+
+        Ok(())
+    }
+
+    #[test]
     fn stack_ops() -> anyhow::Result<()> {
         let cell = Code::assemble(
             r##"

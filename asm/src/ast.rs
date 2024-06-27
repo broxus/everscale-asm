@@ -100,11 +100,15 @@ fn instr<'a>(
     let comment = comment();
 
     let args = instr_arg(stmt)
-        .padded_by(comment.clone().repeated())
-        .separated_by(just(',').padded().recover_with(skip_then_retry_until(
-            any().ignored(),
-            choice((just(',').ignored(), text::newline())),
-        )))
+        .separated_by(
+            just(',')
+                .padded_by(comment.clone().repeated())
+                .padded()
+                .recover_with(skip_then_retry_until(
+                    any().ignored(),
+                    choice((just(',').ignored(), text::newline())),
+                )),
+        )
         .collect::<Vec<_>>();
 
     instr_ident()
@@ -148,7 +152,7 @@ fn instr_arg<'a>(
 
 fn comment<'a>() -> impl Parser<'a, &'a str, (), extra::Err<ParserError>> + Clone {
     just("//")
-        .then(any().and_is(just('\n').not()).repeated())
+        .then(any().and_is(text::newline().not()).repeated())
         .padded()
         .ignored()
 }

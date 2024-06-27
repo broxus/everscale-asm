@@ -1,6 +1,6 @@
 [package]
 name = "everscale-asm-macros"
-version = "0.0.8"
+version = "0.0.9"
 description = "Macros for Rust implementation of TVM Assembler"
 include = ["src/**/*.rs", "src/**/*.tvm", "./LICENSE-*", "./README.md"]
 edition.workspace = true
@@ -17,4 +17,4 @@ proc-macro2 = { workspace = true }
 quote = { workspace = true }
 syn = { workspace = true, features = ["parsing"] }
 
-everscale-asm = { path = "../asm", version = "0.0.8" }
+everscale-asm = { path = "../asm", version = "0.0.9" }

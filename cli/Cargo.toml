@@ -1,6 +1,6 @@
 [package]
 name = "tvmasm"
-version = "0.0.8"
+version = "0.0.9"
 description = "CLI for TVM Assembler"
 include = ["src/**/*.rs", "src/**/*.tvm", "./LICENSE-*", "./README.md"]
 edition.workspace = true
@@ -24,4 +24,4 @@ tracing-subscriber = { workspace = true }
 unicode-width = { workspace = true }
 everscale-types = { workspace = true, features = ["sync"] }
 
-everscale-asm = { path = "../asm", version = "0.0.8" }
+everscale-asm = { path = "../asm", version = "0.0.9" }

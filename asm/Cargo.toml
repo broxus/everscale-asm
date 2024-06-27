@@ -1,6 +1,6 @@
 [package]
 name = "everscale-asm"
-version = "0.0.8"
+version = "0.0.9"
 description = "Rust implementation of TVM Assembler"
 include = ["src/**/*.rs", "src/**/*.tvm", "./LICENSE-*", "./README.md"]
 edition.workspace = true

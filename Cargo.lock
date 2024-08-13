@@ -127,9 +127,9 @@ dependencies = [
 
 [[package]]
 name = "base64"
-version = "0.21.7"
+version = "0.22.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9d297deb1925b89f2ccc13d7635fa0714f12c87adce1c75356b39ca9b7178567"
+checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "bitflags"
@@ -354,18 +354,17 @@ dependencies = [
 
 [[package]]
 name = "everscale-types"
-version = "0.1.0-rc.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7e4db1d304771b5b8d1ca02675cf4899880522ff26237ac101cf51f9b8059630"
+version = "0.1.0-rc.6"
+source = "git+https://github.com/broxus/everscale-types.git#c231b4f9ac9810fbfd228f3aef9f2fc000aa1e76"
 dependencies = [
  "ahash",
  "base64",
  "bitflags 2.5.0",
  "crc32c",
- "dashmap",
  "everscale-crypto",
  "everscale-types-proc",
  "hex",
+ "scc",
  "serde",
  "sha2",
  "smallvec",
@@ -376,8 +375,7 @@ dependencies = [
 [[package]]
 name = "everscale-types-proc"
 version = "0.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "323d8b61c76be2c16eb2d72d007f1542fdeb3760fdf2e2cae219fc0da3db0c09"
+source = "git+https://github.com/broxus/everscale-types.git#c231b4f9ac9810fbfd228f3aef9f2fc000aa1e76"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1070,10 +1068,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f3cb5ba0dc43242ce17de99c180e96db90b235b8a9fdc9543c96d2209116bd9f"
 
 [[package]]
+name = "scc"
+version = "2.1.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "79da19444d9da7a9a82b80ecf059eceba6d3129d84a8610fd25ff2364f255466"
+dependencies = [
+ "sdd",
+]
+
+[[package]]
 name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
+
+[[package]]
+name = "sdd"
+version = "3.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0495e4577c672de8254beb68d01a9b62d0e8a13c099edecdbedccce3223cd29f"
 
 [[package]]
 name = "semver"

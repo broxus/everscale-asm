@@ -81,7 +81,7 @@ impl Context {
 
     fn top_capacity(&self) -> (u16, u8) {
         match self.stack.last() {
-            Some(last) => (last.spare_bits_capacity(), last.spare_refs_capacity()),
+            Some(last) => (last.spare_capacity_bits(), last.spare_capacity_refs()),
             None => (MAX_BIT_LEN, MAX_REF_COUNT as u8),
         }
     }
@@ -94,7 +94,7 @@ impl Context {
         let mut result = None::<CellBuilder>;
         while let Some(mut last) = stack.pop() {
             if let Some(child) = result.take() {
-                if last.has_capacity(child.bit_len(), child.reference_count()) {
+                if last.has_capacity(child.size_bits(), child.size_refs()) {
                     last.store_slice(child.as_full_slice())
                 } else {
                     last.store_reference(child.build_ext(cell_context).with_span(block_span)?)

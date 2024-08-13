@@ -17,7 +17,6 @@ chumsky = "1.0.0-alpha.7"
 console = "0.15"
 dashmap = "5.5"
 either = "1.9"
-everscale-types = "0.1.0-rc.7"
 hex = "0.4"
 num-bigint = "0.4"
 num-traits = "0.2"
@@ -31,3 +30,5 @@ tower-lsp = "0.20"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 unicode-width = "0.1"
+
+everscale-types = { git = "https://github.com/broxus/everscale-types.git" }

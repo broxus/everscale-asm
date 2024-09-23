@@ -227,4 +227,47 @@ mod tests {
         );
         Ok(())
     }
+
+    #[test]
+    fn contops() -> anyhow::Result<()> {
+        let code = Code::assemble(
+            r##"
+            CALLXARGS 0, 2
+            CALLXARGS 15, 14
+            CALLXARGS 1, -1
+
+            CALLCCARGS 0, 2
+            CALLCCARGS 15, 14
+            CALLCCARGS 1, -1
+
+            SETCONTARGS 0, 2
+            SETCONTARGS 15, 14
+            SETCONTARGS 1, -1
+
+            BLESSARGS 0, 2
+            BLESSARGS 15, 14
+            BLESSARGS 1, -1
+            "##,
+        )?;
+        assert_eq!(
+            code.repr_hash(),
+            &"edb0041119c9381c6426a99abf45236c8192383e14c368775e77aa13e0c5fa79"
+                .parse::<HashBytes>()?
+        );
+
+        let code1 = Code::assemble(
+            r##"
+            SETCONTARGS 0, 2
+            BLESSARGS 0, 3
+            "##,
+        )?;
+        let code2 = Code::assemble(
+            r##"
+            SETNUMARGS 2
+            BLESSNUMARGS 3
+            "##,
+        )?;
+        assert_eq!(code1, code2);
+        Ok(())
+    }
 }

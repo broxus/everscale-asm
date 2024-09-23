@@ -314,7 +314,7 @@ checksum = "a357d28ed41a50f9c765dbfe56cbc04a64e53e5fc58ba79fbc34c10ef3df831f"
 
 [[package]]
 name = "everscale-asm"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "ahash",
  "anyhow",
@@ -329,7 +329,7 @@ dependencies = [
 
 [[package]]
 name = "everscale-asm-macros"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "everscale-asm",
  "everscale-types",
@@ -1457,7 +1457,7 @@ dependencies = [
 
 [[package]]
 name = "tvmasm"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "ahash",
  "anyhow",

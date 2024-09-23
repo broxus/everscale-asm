@@ -679,7 +679,7 @@ fn register_stackops(t: &mut Opcodes) {
         // Continuation / Flow control primitives
         "EXECUTE" | "CALLX" => 0xd8,
         "JMPX" => 0xd9,
-        // TODO: CALLXARGS
+        "CALLXARGS" => op_callxargs,
         "JMPXARGS" => 0xdb1(u4),
         "RETARGS" => 0xdb2(u4),
         "RET" | "RETTRUE" => 0xdb30,
@@ -687,7 +687,7 @@ fn register_stackops(t: &mut Opcodes) {
         "BRANCH" | "RETBOOL" => 0xdb32,
         "CALLCC" => 0xdb34,
         "JMPXDATA" => 0xdb35,
-        // TODO: CALLCCARGS
+        "CALLCCARGS" => op_callccargs,
         "CALLXVARARGS" => 0xdb38,
         "RETVARARGS" => 0xdb39,
         "JMPXVARARGS" => 0xdb3a,
@@ -742,16 +742,16 @@ fn register_stackops(t: &mut Opcodes) {
         "AGAINEND" => 0xeb,
 
         // Continuation stack manipulation and continuation creation
-        // TODO: SETCONTARGS
-        // TODO: SETNUMARGS
+        "SETCONTARGS" => op_setcontargs,
+        "SETNUMARGS" => op_setnumargs,
         "RETURNARGS" => 0xed0(u4),
         "RETURNVARARGS" => 0xed10,
         "SETCONTVARARGS" => 0xed11,
         "SETNUMVARARGS" => 0xed12,
         "BLESS" => 0xed1e,
         "BLESSVARARGS" => 0xed1f,
-        // TODO: BLESSARGS
-        // TODO: BLESSNUMARGS
+        "BLESSARGS" => op_blessargs,
+        "BLESSNUMARGS" => op_blessnumargs,
 
         // Control register and continuation savelist manipulation
         "PUSHCTR" => 0xed4(c),
@@ -1395,6 +1395,40 @@ fn op_pldrefidx(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmErro
         .with_span(instr.span)
 }
 
+fn op_callxargs(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
+    let (NatU4(p), WithSpan(Nat(r), r_span)) = instr.parse_args()?;
+    match r.sign() {
+        // DApr
+        Sign::NoSign | Sign::Plus => {
+            let r = match r.to_u8() {
+                Some(r) if (0..=15).contains(&r) => r,
+                _ => return Err(AsmError::OutOfRange(r_span)),
+            };
+            ctx.get_builder(16)
+                .store_u16(0xda00 | ((p as u16) << 4) | (r as u16))
+        }
+        // DB0p
+        Sign::Minus => {
+            if !matches!(r.to_i8(), Some(-1)) {
+                return Err(AsmError::OutOfRange(r_span));
+            }
+            ctx.get_builder(16).store_u16(0xdb00 | (p as u16))
+        }
+    }
+    .with_span(instr.span)
+}
+
+fn op_callccargs(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
+    let (NatU4(p), WithSpan(Nat(r), r_span)) = instr.parse_args()?;
+    let r = match r.to_i8() {
+        Some(r) if (-1..=14).contains(&r) => (r as u8) & 0xf,
+        _ => return Err(AsmError::OutOfRange(r_span)),
+    };
+    ctx.get_builder(24)
+        .store_uint(0xdb3600 | ((p as u64) << 4) | (r as u64), 24)
+        .with_span(instr.span)
+}
+
 fn op_ifbitjmp(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
     op_ifbitjmp_impl::<false>(ctx, instr)
 }
@@ -1432,6 +1466,50 @@ fn op_ifbitjmpref_impl<const INV: bool>(
     b.store_u16(0xe39c | (0x20 * INV as u16) | s as u16)
         .with_span(instr.span)?;
     b.store_reference(c).with_span(instr.span)
+}
+
+fn op_setcontargs(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
+    let (NatU4(r), WithSpan(Nat(n), n_span)) = instr.parse_args()?;
+    let n = match n.to_i8() {
+        Some(n) if (-1..=14).contains(&n) => (n as u8) & 0xf,
+        _ => return Err(AsmError::OutOfRange(n_span)),
+    };
+    ctx.get_builder(16)
+        .store_u16(0xec00 | ((r as u16) << 4) | (n as u16))
+        .with_span(instr.span)
+}
+
+fn op_setnumargs(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
+    let WithSpan(Nat(n), n_span) = instr.parse_args()?;
+    let n = match n.to_i8() {
+        Some(n) if (-1..=14).contains(&n) => (n as u8) & 0xf,
+        _ => return Err(AsmError::OutOfRange(n_span)),
+    };
+    ctx.get_builder(16)
+        .store_u16(0xec00 | (n as u16))
+        .with_span(instr.span)
+}
+
+fn op_blessargs(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
+    let (NatU4(r), WithSpan(Nat(n), n_span)) = instr.parse_args()?;
+    let n = match n.to_i8() {
+        Some(n) if (-1..=14).contains(&n) => (n as u8) & 0xf,
+        _ => return Err(AsmError::OutOfRange(n_span)),
+    };
+    ctx.get_builder(16)
+        .store_u16(0xee00 | ((r as u16) << 4) | (n as u16))
+        .with_span(instr.span)
+}
+
+fn op_blessnumargs(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
+    let WithSpan(Nat(n), n_span) = instr.parse_args()?;
+    let n = match n.to_i8() {
+        Some(n) if (-1..=14).contains(&n) => (n as u8) & 0xf,
+        _ => return Err(AsmError::OutOfRange(n_span)),
+    };
+    ctx.get_builder(16)
+        .store_u16(0xee00 | (n as u16))
+        .with_span(instr.span)
 }
 
 fn op_callvar(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {

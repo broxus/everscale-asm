@@ -146,6 +146,12 @@ fn register_stackops(t: &mut Opcodes) {
                 op_u4::<$base, { (stringify!($base).len() - 2) as u16 * 4 }>,
             ));+
         };
+        (@args $t:ident $($names:literal)|+ $base:literal u8) => {
+            $($t.insert(
+                $names,
+                op_u8::<$base, { (stringify!($base).len() - 2) as u16 * 4 }>,
+            ));+
+        };
         (@args $t:ident $($names:literal)|+ $base:literal u8 - 1) => {
             $($t.insert(
                 $names,
@@ -1007,8 +1013,79 @@ fn register_stackops(t: &mut Opcodes) {
         "HASHCU" => 0xf900,
         "HASHSU" => 0xf901,
         "SHA256U" => 0xf902,
+
+        "HASHEXT" => 0xf904(u8),
+        "HASHEXT_SHA256" => 0xf90400,
+        "HASHEXT_SHA512" => 0xf90401,
+        "HASHEXT_BLAKE2B" => 0xf90402,
+        "HASHEXT_KECCAK256" => 0xf90403,
+        "HASHEXT_KECCAK512" => 0xf90404,
+        "HASHEXTR" => 0xf905(u8),
+        "HASHEXTR_SHA256" => 0xf90500,
+        "HASHEXTR_SHA512" => 0xf90501,
+        "HASHEXTR_BLAKE2B" => 0xf90502,
+        "HASHEXTR_KECCAK256" => 0xf90503,
+        "HASHEXTR_KECCAK512" => 0xf90504,
+        "HASHEXTA" => 0xf906(u8),
+        "HASHEXTA_SHA256" => 0xf90600,
+        "HASHEXTA_SHA512" => 0xf90601,
+        "HASHEXTA_BLAKE2B" => 0xf90602,
+        "HASHEXTA_KECCAK256" => 0xf90603,
+        "HASHEXTA_KECCAK512" => 0xf90604,
+        "HASHEXTAR" => 0xf907(u8),
+        "HASHEXTAR_SHA256" => 0xf90700,
+        "HASHEXTAR_SHA512" => 0xf90701,
+        "HASHEXTAR_BLAKE2B" => 0xf90702,
+        "HASHEXTAR_KECCAK256" => 0xf90703,
+        "HASHEXTAR_KECCAK512" => 0xf90704,
+
         "CHKSIGNU" => 0xf910,
         "CHKSIGNS" => 0xf911,
+        "ECRECOVER" => 0xf912,
+        "P256_CHKSIGNU" => 0xf914,
+        "P256_CHKSIGNS" => 0xf915,
+
+        "RIST255_FROMHASH" => 0xf920,
+        "RIST255_VALIDATE" => 0xf921,
+        "RIST255_ADD" => 0xf922,
+        "RIST255_SUB" => 0xf923,
+        "RIST255_MUL" => 0xf924,
+        "RIST255_MULBASE" => 0xf925,
+        "RIST255_PUSHL" => 0xf926,
+
+        "RIST255_QVALIDATE" => 0xb7f921,
+        "RIST255_QADD" => 0xb7f922,
+        "RIST255_QSUB" => 0xb7f923,
+        "RIST255_QMUL" => 0xb7f924,
+        "RIST255_QMULBASE" => 0xb7f925,
+
+        "BLS_VERIFY" => 0xf93000,
+        "BLS_AGGREGATE" => 0xf93001,
+        "BLS_FASTAGGREGATEVERIFY" => 0xf93002,
+        "BLS_AGGREGATEVERIFY" => 0xf93003,
+
+        "BLS_G1_ADD" => 0xf93010,
+        "BLS_G1_SUB" => 0xf93011,
+        "BLS_G1_NEG" => 0xf93012,
+        "BLS_G1_MUL" => 0xf93013,
+        "BLS_G1_MULTIEXP" => 0xf93014,
+        "BLS_G1_ZERO" => 0xf93015,
+        "BLS_MAP_TO_G1" => 0xf93016,
+        "BLS_G1_INGROUP" => 0xf93017,
+        "BLS_G1_ISZERO" => 0xf93018,
+
+        "BLS_G2_ADD" => 0xf93020,
+        "BLS_G2_SUB" => 0xf93021,
+        "BLS_G2_NEG" => 0xf93022,
+        "BLS_G2_MUL" => 0xf93023,
+        "BLS_G2_MULTIEXP" => 0xf93024,
+        "BLS_G2_ZERO" => 0xf93025,
+        "BLS_MAP_TO_G2" => 0xf93026,
+        "BLS_G2_INGROUP" => 0xf93027,
+        "BLS_G2_ISZERO" => 0xf93028,
+
+        "BLS_PAIRING" => 0xf93030,
+        "BLS_PUSHR" => 0xf93031,
 
         "CDATASIZEQ" => 0xf940,
         "CDATASIZE" => 0xf941,
@@ -1040,6 +1117,7 @@ fn register_stackops(t: &mut Opcodes) {
         "SETCODE" => 0xfb04,
         "SETLIBCODE" => 0xfb06,
         "CHANGELIB" => 0xfb07,
+        "SENDMSG" => 0xfb08,
 
         // Debug primitives
         "DEBUG" => op_debug,
@@ -1742,6 +1820,14 @@ fn op_u4<const BASE: u32, const BITS: u16>(
 ) -> Result<(), AsmError> {
     let NatU4(s1) = instr.parse_args()?;
     write_op_1sr(ctx, BASE, BITS, s1).with_span(instr.span)
+}
+
+fn op_u8<const BASE: u32, const BITS: u16>(
+    ctx: &mut Context,
+    instr: &ast::Instr<'_>,
+) -> Result<(), AsmError> {
+    let NatU8(s1) = instr.parse_args()?;
+    write_op_1sr_l(ctx, BASE, BITS, s1).with_span(instr.span)
 }
 
 fn op_u8_minus1<const BASE: u32, const BITS: u16>(

@@ -1261,7 +1261,7 @@ fn op_blkdrop2(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError
 
 fn op_index2(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
     let (NatU2(s1), NatU2(s2)) = instr.parse_args()?;
-    write_op_1sr_l(ctx, 0x6fb, 12, (s1 << 2) | s2).with_span(instr.span)
+    write_op_1sr(ctx, 0x6fb, 12, (s1 << 2) | s2).with_span(instr.span)
 }
 
 fn op_index3(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {

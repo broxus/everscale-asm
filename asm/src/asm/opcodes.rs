@@ -774,6 +774,8 @@ fn register_stackops(t: &mut Opcodes) {
         "PUSHCTRX" => 0xede0,
         "POPCTRX" => 0xede1,
         "SETCONTCTRX" => 0xede2,
+        "SETCONTCTRMANY" | "SETCONTMANY" => 0xede3(u8),
+        "SETCONTCTRMANYX" | "SETCONTMANYX" => 0xede4,
         "BOOLAND" | "COMPOS" => 0xedf0,
         "BOOLOR" | "COMPOSALT" => 0xedf1,
         "COMPOSBOTH" => 0xedf2,
@@ -1042,6 +1044,7 @@ fn register_stackops(t: &mut Opcodes) {
         "CHKSIGNU" => 0xf910,
         "CHKSIGNS" => 0xf911,
         "ECRECOVER" => 0xf912,
+        "SECP256K1_XONLY_PUBKEY_TWEAK_ADD" => 0xf913,
         "P256_CHKSIGNU" => 0xf914,
         "P256_CHKSIGNS" => 0xf915,
 

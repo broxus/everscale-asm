@@ -158,6 +158,12 @@ fn register_stackops(t: &mut Opcodes) {
                 op_u8_minus1::<$base, { (stringify!($base).len() - 2) as u16 * 4 }>,
             ));+
         };
+        (@args $t:ident $($names:literal)|+ $base:literal i8) => {
+            $($t.insert(
+                $names,
+                op_i8::<$base, { (stringify!($base).len() - 2) as u16 * 4 }>,
+            ));+
+        };
         (@args $t:ident $($names:literal)|+ $base:literal c) => {
             $($t.insert(
                 $names,
@@ -490,20 +496,31 @@ fn register_stackops(t: &mut Opcodes) {
         "NEQ" => 0xbd,
         "GEQ" => 0xbe,
         "CMP" => 0xbf,
-        // TODO: EQINT
+        "EQINT" => 0xc0(i8),
         "ISZERO" => 0xc000,
-        // TODO: LESSINT
-        // TODO: LEQINT
+        "LESSINT" => 0xc1(i8),
         "ISNEG" => 0xc100,
         "ISNPOS" => 0xc101,
-        // TODO: GTINT,
-        // TODO: GEQINT,
+        "GTINT" => 0xc2(i8),
         "ISPOS" => 0xc200,
         "ISNNEG" => 0xc2ff,
-        // TODO: NEQINT
+        "NEQINT" => 0xc3(i8),
         "ISNZERO" => 0xc300,
         "ISNAN" => 0xc4,
         "CHKNAN" => 0xc5,
+
+        "QSGN" => 0xb7b8,
+        "QLESS" => 0xb7b9,
+        "QEQUAL" => 0xb7ba,
+        "QLEQ" => 0xb7bb,
+        "QGREATER" => 0xb7bc,
+        "QNEQ" => 0xb7bd,
+        "QGEQ" => 0xb7be,
+        "QCMP" => 0xb7bf,
+        "QEQINT" => 0xb7c0(i8),
+        "QLESSINT" => 0xb7c1(i8),
+        "QGTINT" => 0xb7c2(i8),
+        "QNEQINT" => 0xb7c3(i8),
 
         // Other comparison
         "SEMPTY" => 0xc700,
@@ -1839,6 +1856,14 @@ fn op_u8_minus1<const BASE: u32, const BITS: u16>(
 ) -> Result<(), AsmError> {
     let NatU8minus::<1>(s1) = instr.parse_args()?;
     write_op_1sr_l(ctx, BASE, BITS, s1).with_span(instr.span)
+}
+
+fn op_i8<const BASE: u32, const BITS: u16>(
+    ctx: &mut Context,
+    instr: &ast::Instr<'_>,
+) -> Result<(), AsmError> {
+    let NatI8(s1) = instr.parse_args()?;
+    write_op_1sr_l(ctx, BASE, BITS, s1 as u8).with_span(instr.span)
 }
 
 fn op_2sr<const BASE: u32, const BITS: u16>(

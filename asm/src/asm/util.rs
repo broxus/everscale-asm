@@ -295,6 +295,24 @@ impl<const N: u16> FromInstrArg<'_> for NatU8minus<N> {
     }
 }
 
+pub struct NatI8(pub i8);
+
+impl FromInstrArg<'_> for NatI8 {
+    fn from_instr_arg(arg: &'_ ast::InstrArg<'_>) -> Result<Self, AsmError> {
+        match &arg.value {
+            ast::InstrArgValue::Nat(n) => match n.to_i8() {
+                Some(n) => Ok(Self(n)),
+                None => Err(AsmError::OutOfRange(arg.span)),
+            },
+            _ => Err(AsmError::ArgTypeMismatch {
+                span: arg.span,
+                expected: ArgType::Nat.expected_exact(),
+                found: arg.value.ty(),
+            }),
+        }
+    }
+}
+
 pub struct NatU11(pub u16);
 
 impl FromInstrArg<'_> for NatU11 {

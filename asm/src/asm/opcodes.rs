@@ -351,9 +351,9 @@ fn register_stackops(t: &mut Opcodes) {
         "NEGATE" => 0xa3,
         "INC" => 0xa4,
         "DEC" => 0xa5,
-        // TODO: "ADDCONST" | "ADDINT"
-        // TODO: "SUBCONST" | "SUBINT"
-        // TODO: "MULCONST" | "MULINT"
+        "ADDCONST" | "ADDINT" => 0xa6(i8),
+        "SUBCONST" | "SUBINT" => op_subconst,
+        "MULCONST" | "MULINT" => 0xa7(i8),
         "MUL" => 0xa8,
 
         "DIV" => 0xa904,
@@ -462,6 +462,8 @@ fn register_stackops(t: &mut Opcodes) {
         "QNEGATE" => 0xb7a3,
         "QINC" => 0xb7a4,
         "QDEC" => 0xb7a5,
+        "QADDCONST" | "QADDINT" => 0xb7a6(i8),
+        "QMULCONST" | "QMULINT" => 0xb7a7(i8),
         "QMUL" => 0xb7a8,
         "QDIV" => 0xb7a904,
         "QDIVR" => 0xb7a905,
@@ -1484,6 +1486,11 @@ fn op_pushcont(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError
     }
 
     write_pushcont(ctx, c).with_span(instr.span)
+}
+
+fn op_subconst(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
+    let NatI8(s1) = instr.parse_args()?;
+    write_op_1sr_l(ctx, 0xa6, 8, -s1 as u8).with_span(instr.span)
 }
 
 fn op_pldrefidx(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {

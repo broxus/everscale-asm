@@ -365,6 +365,9 @@ fn register_stackops(t: &mut Opcodes) {
         "DIVMOD" => 0xa90c,
         "DIVMODR" => 0xa90d,
         "DIVMODC" => 0xa90e,
+        "ADDDIVMOD" => 0xa900,
+        "ADDDIVMODR" => 0xa901,
+        "ADDDIVMODC" => 0xa902,
 
         "RSHIFTR" => 0xa925,
         "RSHIFTC" => 0xa926,
@@ -374,6 +377,9 @@ fn register_stackops(t: &mut Opcodes) {
         "RSHIFTMOD" => 0xa92c,
         "RSHIFTMODR" => 0xa92d,
         "RSHIFTMODC" => 0xa92e,
+        "ADDRSHIFTMOD" => 0xa920,
+        "ADDRSHIFTMODR" => 0xa921,
+        "ADDRSHIFTMODC" => 0xa922,
 
         "RSHIFTR#" => 0xa935(u8 - 1),
         "RSHIFTC#" => 0xa936(u8 - 1),
@@ -383,6 +389,9 @@ fn register_stackops(t: &mut Opcodes) {
         "RSHIFT#MOD" => 0xa93c(u8 - 1),
         "RSHIFTR#MOD" => 0xa93d(u8 - 1),
         "RSHIFTC#MOD" => 0xa93e(u8 - 1),
+        "ADDRSHIFT#MOD" => 0xa930(u8 - 1),
+        "ADDRSHIFTR#MOD" => 0xa931(u8 - 1),
+        "ADDRSHIFTC#MOD" => 0xa932(u8 - 1),
 
         "MULDIV" => 0xa984,
         "MULDIVR" => 0xa985,
@@ -393,6 +402,9 @@ fn register_stackops(t: &mut Opcodes) {
         "MULDIVMOD" => 0xa98c,
         "MULDIVMODR" => 0xa98d,
         "MULDIVMODC" => 0xa98e,
+        "MULADDDIVMOD" => 0xa980,
+        "MULADDDIVMODR" => 0xa981,
+        "MULADDDIVMODC" => 0xa982,
 
         "MULRSHIFT" => 0xa9a4,
         "MULRSHIFTR" => 0xa9a5,
@@ -403,6 +415,9 @@ fn register_stackops(t: &mut Opcodes) {
         "MULRSHIFTMOD" => 0xa9ac,
         "MULRSHIFTRMOD" => 0xa9ad,
         "MULRSHIFTCMOD" => 0xa9ae,
+        "MULADDRSHIFTMOD" => 0xa9a0,
+        "MULADDRSHIFTRMOD" => 0xa9a1,
+        "MULADDRSHIFTCMOD" => 0xa9a2,
 
         "MULRSHIFT#" => 0xa9b4(u8 - 1),
         "MULRSHIFTR#" => 0xa9b5(u8 - 1),
@@ -413,6 +428,9 @@ fn register_stackops(t: &mut Opcodes) {
         "MULRSHIFT#MOD" => 0xa9bc(u8 - 1),
         "MULRSHIFTR#MOD" => 0xa9bd(u8 - 1),
         "MULRSHIFTC#MOD" => 0xa9be(u8 - 1),
+        "MULADDRSHIFT#MOD" => 0xa9b0(u8 - 1),
+        "MULADDRSHIFTR#MOD" => 0xa9b1(u8 - 1),
+        "MULADDRSHIFTC#MOD" => 0xa9b2(u8 - 1),
 
         "LSHIFTDIV" => 0xa9c4,
         "LSHIFTDIVR" => 0xa9c5,
@@ -423,6 +441,9 @@ fn register_stackops(t: &mut Opcodes) {
         "LSHIFTDIVMOD" => 0xa9cc,
         "LSHIFTDIVMODR" => 0xa9cd,
         "LSHIFTDIVMODC" => 0xa9ce,
+        "LSHIFTADDDIVMOD" => 0xa9c0,
+        "LSHIFTADDDIVMODR" => 0xa9c1,
+        "LSHIFTADDDIVMODC" => 0xa9c2,
 
         "LSHIFT#DIV" => 0xa9d4(u8 - 1),
         "LSHIFT#DIVR" => 0xa9d5(u8 - 1),
@@ -433,6 +454,9 @@ fn register_stackops(t: &mut Opcodes) {
         "LSHIFT#DIVMOD" => 0xa9dc(u8 - 1),
         "LSHIFT#DIVMODR" => 0xa9dd(u8 - 1),
         "LSHIFT#DIVMODC" => 0xa9de(u8 - 1),
+        "LSHIFT#ADDDIVMOD" => 0xa9d0(u8 - 1),
+        "LSHIFT#ADDDIVMODR" => 0xa9d1(u8 - 1),
+        "LSHIFT#ADDDIVMODC" => 0xa9d2(u8 - 1),
 
         "LSHIFT#" => 0xaa(u8 - 1),
         "RSHIFT#" => 0xab(u8 - 1),

@@ -31,4 +31,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 unicode-width = "0.1"
 
-everscale-types = { git = "https://github.com/broxus/everscale-types.git" }
+everscale-types = { version = "0.1.2", default-features = false }
+
+[patch.crates-io]
+everscale-types = { git = "https://github.com/broxus/everscale-types.git", rev = "71579dbff0ba4bfef44f4912f42c236d82e0d575" }

@@ -1491,9 +1491,10 @@ fn op_pushcont(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError
     fn write_pushcont(ctx: &mut Context, c: Cell) -> Result<(), Error> {
         let bits = c.bit_len();
         let refs = c.reference_count();
+        let is_library = c.descriptor().cell_type() == CellType::LibraryReference;
 
         let (rem_bits, rem_refs) = ctx.top_capacity();
-        if bits + MAX_BITS_OVERHEAD > rem_bits || refs + 1 > rem_refs {
+        if is_library || bits + MAX_BITS_OVERHEAD > rem_bits || refs + 1 > rem_refs {
             // Fallback to PUSHREFCONT
             let b = ctx.get_builder_ext(8, 2);
             b.store_u8(0x8a)?;

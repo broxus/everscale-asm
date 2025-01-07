@@ -413,6 +413,7 @@ impl<'a> FromInstrArg<'a> for SliceOrCont<'a> {
     fn from_instr_arg(arg: &'a ast::InstrArg<'_>) -> Result<Self, AsmError> {
         Ok(Self(match &arg.value {
             ast::InstrArgValue::Slice(cell) => Either::Left(cell.clone()),
+            ast::InstrArgValue::Lib(lib) => Either::Left(lib.clone()),
             ast::InstrArgValue::Block(items) => Either::Right((items.as_slice(), arg.span)),
             _ => {
                 return Err(AsmError::ArgTypeMismatch {

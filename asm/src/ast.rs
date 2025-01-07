@@ -2,6 +2,7 @@ use std::str::FromStr;
 
 use chumsky::prelude::*;
 use chumsky::util::MaybeRef;
+use everscale_types::cell::{CellType, HashBytes};
 use everscale_types::prelude::{Cell, CellBuilder};
 use num_bigint::BigInt;
 use num_traits::Num;
@@ -50,6 +51,7 @@ pub enum InstrArgValue<'a> {
     SReg(i16),
     CReg(u8),
     Slice(Cell),
+    Lib(Cell),
     Block(Vec<Stmt<'a>>),
     Invalid,
 }
@@ -141,6 +143,10 @@ fn instr_arg<'a>(
         cell_slice().map(|slice| {
             slice
                 .map(InstrArgValue::Slice)
+                .unwrap_or(InstrArgValue::Invalid)
+        }),
+        library_cell().map(|lib| {
+            lib.map(InstrArgValue::Lib)
                 .unwrap_or(InstrArgValue::Invalid)
         }),
     ))
@@ -305,6 +311,41 @@ fn cont_block<'a>(
     )
 }
 
+fn library_cell<'a>() -> impl Parser<'a, &'a str, Option<Cell>, extra::Err<ParserError>> + Clone {
+    let content_recovery = any()
+        .filter(|&c: &char| c != '}' && !c.is_whitespace())
+        .repeated();
+
+    let braces_recovery = none_of("}\n").repeated().then(just('}').or_not());
+
+    just("@{")
+        .ignore_then(
+            any()
+                .filter(|&c: &char| c != '}' && !c.is_whitespace())
+                .repeated()
+                .to_slice()
+                .try_map(move |s, span| match parse_library_ref(s) {
+                    Ok(lib) => Ok(Some(lib)),
+                    Err(e) => Err(ParserError::InvalidLibrary {
+                        span,
+                        inner: e.into(),
+                    }),
+                })
+                .recover_with(via_parser(content_recovery.map(|_| None))),
+        )
+        .then(
+            just('}')
+                .map(|_| true)
+                .recover_with(via_parser(braces_recovery.map(|_| false))),
+        )
+        .map(|(mut t, valid)| {
+            if !valid {
+                t = None;
+            }
+            t
+        })
+}
+
 fn cell_slice<'a>() -> impl Parser<'a, &'a str, Option<Cell>, extra::Err<ParserError>> + Clone {
     let content_recovery = any()
         .filter(|&c: &char| c != '}' && !c.is_whitespace())
@@ -431,6 +472,15 @@ fn parse_bin_slice(s: &str) -> Result<Cell, SliceError> {
     builder.build().map_err(SliceError::CellError)
 }
 
+fn parse_library_ref(s: &str) -> Result<Cell, LibraryError> {
+    let hash = s.parse::<HashBytes>()?;
+    let mut b = CellBuilder::new();
+    b.set_exotic(true);
+    b.store_u8(CellType::LibraryReference.to_byte())?;
+    b.store_u256(&hash)?;
+    b.build().map_err(LibraryError::CellError)
+}
+
 #[derive(thiserror::Error, Debug)]
 pub enum ParserError {
     #[error("unexpected character found: {found:?}")]
@@ -446,6 +496,8 @@ pub enum ParserError {
     InvalidControlRegister { span: Span, inner: anyhow::Error },
     #[error("invalid slice: {inner}")]
     InvalidSlice { span: Span, inner: anyhow::Error },
+    #[error("invalid library cell: {inner}")]
+    InvalidLibrary { span: Span, inner: anyhow::Error },
     #[error("unknown error")]
     UnknownError,
 }
@@ -457,7 +509,8 @@ impl ParserError {
             | Self::InvalidInt { span, .. }
             | Self::InvalidStackRegister { span, .. }
             | Self::InvalidControlRegister { span, .. }
-            | Self::InvalidSlice { span, .. } => Some(*span),
+            | Self::InvalidSlice { span, .. }
+            | Self::InvalidLibrary { span, .. } => Some(*span),
             Self::UnknownError => None,
         }
     }
@@ -481,6 +534,14 @@ enum SliceError {
     InvalidBin(char),
     #[error("bitstring is too long")]
     TooLong,
+    #[error("cell build error: {0}")]
+    CellError(#[from] everscale_types::error::Error),
+}
+
+#[derive(thiserror::Error, Debug)]
+enum LibraryError {
+    #[error("invalid hash: {0}")]
+    InvalidHexFull(#[from] everscale_types::error::ParseHashBytesError),
     #[error("cell build error: {0}")]
     CellError(#[from] everscale_types::error::Error),
 }
@@ -571,11 +632,26 @@ mod tests {
     fn strange_opcodes() {
         let (output, errors) = parse(
             r#"
-        NOP
-        2DROP
-        OVER
-        LESSINT 2
-        "#,
+            NOP
+            2DROP
+            OVER
+            LESSINT 2
+            "#,
+        )
+        .into_output_errors();
+        println!("OUTPUT: {:#?}", output);
+        println!("ERRORS: {:#?}", errors);
+
+        assert!(output.is_some());
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn library_cells() {
+        let (output, errors) = parse(
+            r#"
+            PUSHREF @{aabbaaccaabbaaccaabbaaccaabbaaccaabbaaccaabbaaccaabbaaccaabbaacc}
+            "#,
         )
         .into_output_errors();
         println!("OUTPUT: {:#?}", output);

@@ -49,6 +49,7 @@ impl ast::InstrArgValue<'_> {
             ast::InstrArgValue::SReg(_) => ArgType::StackRegister,
             ast::InstrArgValue::CReg(_) => ArgType::ControlRegister,
             ast::InstrArgValue::Slice(_) => ArgType::Slice,
+            ast::InstrArgValue::Lib(_) => ArgType::Library,
             ast::InstrArgValue::Block(_) => ArgType::Block,
             ast::InstrArgValue::Invalid => ArgType::Invalid,
         }
@@ -61,6 +62,7 @@ pub enum ArgType {
     StackRegister,
     ControlRegister,
     Slice,
+    Library,
     Block,
     Invalid,
 }
@@ -82,6 +84,7 @@ impl std::fmt::Display for ArgType {
             Self::StackRegister => "stack register",
             Self::ControlRegister => "control register",
             Self::Slice => "cell slice",
+            Self::Library => "library hash",
             Self::Block => "instruction block",
             Self::Invalid => "invalid",
         })

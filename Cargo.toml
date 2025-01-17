@@ -34,4 +34,4 @@ unicode-width = "0.1"
 everscale-types = { version = "0.1.2", default-features = false }
 
 [patch.crates-io]
-everscale-types = { git = "https://github.com/broxus/everscale-types.git", rev = "71579dbff0ba4bfef44f4912f42c236d82e0d575" }
+everscale-types = { git = "https://github.com/broxus/everscale-types.git", rev = "34d83b307675cd83cbbb818c8fa0eab92543bcc1" }

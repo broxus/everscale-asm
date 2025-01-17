@@ -90,7 +90,7 @@ impl Context {
         mut stack: Vec<CellBuilder>,
         block_span: ast::Span,
     ) -> Result<CellBuilder, AsmError> {
-        let cell_context = &mut Cell::empty_context();
+        let cell_context = Cell::empty_context();
         let mut result = None::<CellBuilder>;
         while let Some(mut last) = stack.pop() {
             if let Some(child) = result.take() {
@@ -2029,7 +2029,7 @@ fn write_slice_padding(padding: u16, b: &mut CellBuilder) -> Result<(), Error> {
     b.store_zeros(padding - 1)
 }
 
-impl<'a> SliceOrCont<'a> {
+impl SliceOrCont<'_> {
     fn into_cell(self, parent_ctx: &mut Context) -> Result<Cell, AsmError> {
         match self.0 {
             Either::Left(cell) => Ok(cell),

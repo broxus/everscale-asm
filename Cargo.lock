@@ -280,7 +280,7 @@ dependencies = [
  "hex",
  "num-bigint",
  "num-traits",
- "thiserror 2.0.10",
+ "thiserror",
 ]
 
 [[package]]
@@ -297,7 +297,7 @@ dependencies = [
 [[package]]
 name = "everscale-types"
 version = "0.1.2"
-source = "git+https://github.com/broxus/everscale-types.git?rev=71579dbff0ba4bfef44f4912f42c236d82e0d575#71579dbff0ba4bfef44f4912f42c236d82e0d575"
+source = "git+https://github.com/broxus/everscale-types.git?rev=34d83b307675cd83cbbb818c8fa0eab92543bcc1#34d83b307675cd83cbbb818c8fa0eab92543bcc1"
 dependencies = [
  "ahash",
  "bitflags 2.6.0",
@@ -307,13 +307,13 @@ dependencies = [
  "scc",
  "sha2",
  "smallvec",
- "thiserror 1.0.69",
+ "thiserror",
 ]
 
 [[package]]
 name = "everscale-types-proc"
 version = "0.1.5"
-source = "git+https://github.com/broxus/everscale-types.git?rev=71579dbff0ba4bfef44f4912f42c236d82e0d575#71579dbff0ba4bfef44f4912f42c236d82e0d575"
+source = "git+https://github.com/broxus/everscale-types.git?rev=34d83b307675cd83cbbb818c8fa0eab92543bcc1#34d83b307675cd83cbbb818c8fa0eab92543bcc1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1059,31 +1059,11 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "1.0.69"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b6aaf5339b578ea85b50e080feb250a3e8ae8cfcdff9a461c9ec2904bc923f52"
-dependencies = [
- "thiserror-impl 1.0.69",
-]
-
-[[package]]
-name = "thiserror"
 version = "2.0.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a3ac7f54ca534db81081ef1c1e7f6ea8a3ef428d2fc069097c079443d24124d3"
 dependencies = [
- "thiserror-impl 2.0.10",
-]
-
-[[package]]
-name = "thiserror-impl"
-version = "1.0.69"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4fee6c4efc90059e10f81e6d42c60a18f76588c3d74cb83a0b242a2b6c7504c1"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
+ "thiserror-impl",
 ]
 
 [[package]]

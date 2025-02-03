@@ -13,7 +13,7 @@ ahash = "0.8"
 anyhow = "1.0"
 argh = "0.1"
 async-trait = "0.1"
-chumsky = "1.0.0-alpha.7"
+chumsky = "1.0.0-alpha.8"
 console = "0.15"
 dashmap = "5.5"
 either = "1.9"
@@ -34,4 +34,4 @@ unicode-width = "0.1"
 everscale-types = { version = "0.1.2", default-features = false }
 
 [patch.crates-io]
-everscale-types = { git = "https://github.com/broxus/everscale-types.git", rev = "34d83b307675cd83cbbb818c8fa0eab92543bcc1" }
+everscale-types = { git = "https://github.com/broxus/everscale-types.git", rev = "69c344eac4e1f95d66b045ae90db904ad8afdfaf" }

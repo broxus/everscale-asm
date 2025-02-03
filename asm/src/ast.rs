@@ -1,7 +1,8 @@
 use std::str::FromStr;
 
-use chumsky::prelude::*;
+use chumsky::text::TextExpected;
 use chumsky::util::MaybeRef;
+use chumsky::{prelude::*, DefaultExpected};
 use everscale_types::cell::{CellType, HashBytes};
 use everscale_types::prelude::{Cell, CellBuilder};
 use num_bigint::BigInt;
@@ -254,7 +255,7 @@ fn stack_register<'a>() -> impl Parser<'a, &'a str, Option<i16>, extra::Err<Pars
     let until_eof_or_paren = none_of(")\n").repeated().then(just(')').or_not());
 
     let idx =
-        text::int::<_, _, extra::Err<ParserError>>(10).try_map(|s, span| match i16::from_str(s) {
+        text::int::<_, extra::Err<ParserError>>(10).try_map(|s, span| match i16::from_str(s) {
             Ok(n) => Ok(n),
             Err(e) => Err(ParserError::InvalidStackRegister {
                 span,
@@ -282,7 +283,7 @@ fn control_register<'a>() -> impl Parser<'a, &'a str, Option<u8>, extra::Err<Par
         .filter(|&c: &char| c != ',' && !c.is_whitespace())
         .repeated();
 
-    let idx = text::int::<_, _, extra::Err<ParserError>>(10)
+    let idx = text::int::<_, extra::Err<ParserError>>(10)
         .try_map(|s, span| match u8::from_str(s) {
             Ok(n) if (0..=5).contains(&n) || n == 7 => Ok(Some(n)),
             Ok(n) => Err(ParserError::InvalidControlRegister {
@@ -546,8 +547,8 @@ enum LibraryError {
     CellError(#[from] everscale_types::error::Error),
 }
 
-impl<'a> chumsky::error::Error<'a, &'a str> for ParserError {
-    fn expected_found<Iter: IntoIterator<Item = Option<MaybeRef<'a, char>>>>(
+impl<'a> chumsky::error::LabelError<'a, &'a str, MaybeRef<'a, char>> for ParserError {
+    fn expected_found<Iter: IntoIterator<Item = MaybeRef<'a, char>>>(
         _: Iter,
         found: Option<MaybeRef<'a, char>>,
         span: Span,
@@ -557,7 +558,35 @@ impl<'a> chumsky::error::Error<'a, &'a str> for ParserError {
             found: found.as_deref().copied(),
         }
     }
+}
 
+impl<'a> chumsky::error::LabelError<'a, &'a str, TextExpected<'a, &'a str>> for ParserError {
+    fn expected_found<Iter: IntoIterator<Item = TextExpected<'a, &'a str>>>(
+        _: Iter,
+        found: Option<MaybeRef<'a, char>>,
+        span: Span,
+    ) -> Self {
+        Self::ExpectedFound {
+            span,
+            found: found.as_deref().copied(),
+        }
+    }
+}
+
+impl<'a> chumsky::error::LabelError<'a, &'a str, DefaultExpected<'a, char>> for ParserError {
+    fn expected_found<Iter: IntoIterator<Item = DefaultExpected<'a, char>>>(
+        _: Iter,
+        found: Option<MaybeRef<'a, char>>,
+        span: Span,
+    ) -> Self {
+        Self::ExpectedFound {
+            span,
+            found: found.as_deref().copied(),
+        }
+    }
+}
+
+impl<'a> chumsky::error::Error<'a, &'a str> for ParserError {
     fn merge(self, _: Self) -> Self {
         self
     }

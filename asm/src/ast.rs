@@ -219,19 +219,32 @@ fn instr_ident<'a>() -> impl Parser<'a, &'a str, &'a str, extra::Err<ParserError
 }
 
 fn nat<'a>() -> impl Parser<'a, &'a str, BigInt, extra::Err<ParserError>> + Clone {
-    fn parse_int(s: &str, radix: u32, span: Span) -> Result<BigInt, ParserError> {
+    fn parse_int(mut s: &str, radix: u32, span: Span) -> Result<BigInt, ParserError> {
+        if !s.is_empty() {
+            s = s.trim_start_matches('0');
+            if s.is_empty() {
+                s = "0";
+            }
+        }
+
         match BigInt::from_str_radix(s, radix) {
             Ok(n) => Ok(n),
             Err(e) => Err(ParserError::InvalidInt { span, inner: e }),
         }
     }
 
+    let num_slice = any()
+        .filter(|&c: &char| !c.is_whitespace() && c != ',' && c != '}' && c != '{')
+        .repeated()
+        .at_least(1)
+        .to_slice();
+
     let number = choice((
         just("0x")
-            .ignore_then(text::int(16))
+            .ignore_then(num_slice.clone())
             .try_map(|s, span| parse_int(s, 16, span)),
         just("0b")
-            .ignore_then(text::int(2))
+            .ignore_then(num_slice)
             .try_map(|s, span| parse_int(s, 2, span)),
         text::int(10).try_map(|s, span| parse_int(s, 10, span)),
     ));

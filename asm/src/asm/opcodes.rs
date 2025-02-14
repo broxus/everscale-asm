@@ -633,7 +633,7 @@ fn register_stackops(t: &mut Opcodes) {
         "STZEROES" => 0xcf40,
         "STONES" => 0xcf41,
         "STSAME" => 0xcf42,
-        // TODO: STSLICECONST
+        "STSLICECONST" => op_stsliceconst,
         "STZERO" => 0xcf81,
         "STONE" => 0xcf93,
 
@@ -1431,51 +1431,83 @@ fn op_pushintx(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError
     }
 }
 
-fn op_pushslice(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
-    const MAX_BITS_OVERHEAD: u16 = 26; // Longest prefix/padding
+fn op_stsliceconst(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
+    const PREFIX_BIT_LEN: u16 = 22;
 
     let c = instr.parse_args::<SliceOrCont>()?.into_cell(ctx)?;
 
-    fn write_pushslice(ctx: &mut Context, c: Cell) -> Result<(), Error> {
+    fn write_stsliceconst(ctx: &mut Context, c: Cell) -> Result<(), Error> {
+        const MAX_BITS: u16 = 8 * 7 + 1;
+        const MAX_REFS: u8 = 3;
+
         let bits = c.bit_len();
         let refs = c.reference_count();
 
         let (rem_bits, rem_refs) = ctx.top_capacity();
-        if bits + MAX_BITS_OVERHEAD > rem_bits || refs + 1 > rem_refs {
-            // Fallback to PUSHREFSLICE
-            let b = ctx.get_builder_ext(8, 2);
-            b.store_u8(0x89)?;
-            b.store_reference(c)
-        } else if bits <= 123 && refs == 0 {
-            let l = (bits + 4) / 8;
-            let padding = l * 8 + 4 - bits;
-            let b = ctx.get_builder_ext(8 + 4 + bits + padding, refs + 1);
-            b.store_u8(0x8b)?;
-            b.store_small_uint(l as u8, 4)?;
-            b.store_slice(c.as_slice()?)?;
-            write_slice_padding(padding, b)
-        } else if bits <= 248 && refs >= 1 {
-            let l = (bits + 7) / 8;
-            let padding = l * 8 + 1 - bits;
-            let b = ctx.get_builder_ext(8 + 2 + 5 + bits + padding, refs + 1);
-            b.store_u8(0x8c)?;
-            b.store_small_uint(refs - 1, 2)?;
-            b.store_small_uint(l as u8, 5)?;
-            b.store_slice(c.as_slice()?)?;
-            write_slice_padding(padding, b)
+        if bits + PREFIX_BIT_LEN > rem_bits || refs > rem_refs.min(MAX_REFS) || bits > MAX_BITS {
+            // Fallback to PUSHSLICE STSLICER
+            write_pushslice(ctx, c)?;
+            write_op(ctx, 0xcf16, 16)
         } else {
-            let l = (bits + 2) / 8;
-            let padding = l * 8 + 6 - bits;
-            let b = ctx.get_builder_ext(8 + 3 + 7 + bits + padding, refs + 1);
-            b.store_u8(0x8d)?;
-            b.store_small_uint(refs, 3)?;
-            b.store_small_uint(l as u8, 7)?;
-            b.store_slice(c.as_slice()?)?;
+            let l = (bits + 6) / 8;
+            let padding = l * 8 + 2 - bits;
+            let b = ctx.get_builder_ext(9 + 2 + 3 + bits + padding, refs);
+            b.store_u8(0xcf)?;
+            b.store_bit_one()?;
+            b.store_small_uint(refs, 2)?;
+            b.store_small_uint(l as u8, 3)?;
+            b.store_slice(c.as_slice_allow_pruned())?;
             write_slice_padding(padding, b)
         }
     }
 
+    write_stsliceconst(ctx, c).with_span(instr.span)
+}
+
+fn op_pushslice(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
+    let c = instr.parse_args::<SliceOrCont>()?.into_cell(ctx)?;
     write_pushslice(ctx, c).with_span(instr.span)
+}
+
+fn write_pushslice(ctx: &mut Context, c: Cell) -> Result<(), Error> {
+    const MAX_BITS_OVERHEAD: u16 = 26; // Longest prefix/padding
+
+    let bits = c.bit_len();
+    let refs = c.reference_count();
+
+    let (rem_bits, rem_refs) = ctx.top_capacity();
+    if bits + MAX_BITS_OVERHEAD > rem_bits || refs + 1 > rem_refs {
+        // Fallback to PUSHREFSLICE
+        let b = ctx.get_builder_ext(8, 2);
+        b.store_u8(0x89)?;
+        b.store_reference(c)
+    } else if bits <= 123 && refs == 0 {
+        let l = (bits + 4) / 8;
+        let padding = l * 8 + 4 - bits;
+        let b = ctx.get_builder_ext(8 + 4 + bits + padding, refs + 1);
+        b.store_u8(0x8b)?;
+        b.store_small_uint(l as u8, 4)?;
+        b.store_slice(c.as_slice_allow_pruned())?;
+        write_slice_padding(padding, b)
+    } else if bits <= 248 && refs >= 1 {
+        let l = (bits + 7) / 8;
+        let padding = l * 8 + 1 - bits;
+        let b = ctx.get_builder_ext(8 + 2 + 5 + bits + padding, refs + 1);
+        b.store_u8(0x8c)?;
+        b.store_small_uint(refs - 1, 2)?;
+        b.store_small_uint(l as u8, 5)?;
+        b.store_slice(c.as_slice_allow_pruned())?;
+        write_slice_padding(padding, b)
+    } else {
+        let l = (bits + 2) / 8;
+        let padding = l * 8 + 6 - bits;
+        let b = ctx.get_builder_ext(8 + 3 + 7 + bits + padding, refs + 1);
+        b.store_u8(0x8d)?;
+        b.store_small_uint(refs, 3)?;
+        b.store_small_uint(l as u8, 7)?;
+        b.store_slice(c.as_slice_allow_pruned())?;
+        write_slice_padding(padding, b)
+    }
 }
 
 fn op_pushcont(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
@@ -1502,11 +1534,11 @@ fn op_pushcont(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError
         } else if bits <= 120 && refs == 0 {
             let b = ctx.get_builder(8 + bits);
             b.store_u8(0x90 | (bits / 8) as u8)?;
-            b.store_slice(c.as_slice()?)
+            b.store_slice(c.as_slice_allow_pruned())
         } else {
             let b = ctx.get_builder_ext(16 + bits, refs + 1);
             b.store_u16(0x8e00 | ((refs as u16) << 7) | (bits / 8))?;
-            b.store_slice(c.as_slice()?)
+            b.store_slice(c.as_slice_allow_pruned())
         }
     }
 

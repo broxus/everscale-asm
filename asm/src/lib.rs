@@ -270,4 +270,11 @@ mod tests {
         assert_eq!(code1, code2);
         Ok(())
     }
+
+    #[test]
+    fn stsliceconst() -> anyhow::Result<()> {
+        let code = Code::assemble("STSLICECONST x{cf_}")?;
+        assert_eq!(code.as_slice_allow_pruned().load_uint(24)?, 0xcf873c);
+        Ok(())
+    }
 }

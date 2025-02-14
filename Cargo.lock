@@ -127,6 +127,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "base64"
+version = "0.22.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
+
+[[package]]
 name = "bitflags"
 version = "1.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -307,6 +313,7 @@ version = "0.1.2"
 source = "git+https://github.com/broxus/everscale-types.git?rev=69c344eac4e1f95d66b045ae90db904ad8afdfaf#69c344eac4e1f95d66b045ae90db904ad8afdfaf"
 dependencies = [
  "ahash",
+ "base64",
  "bitflags 2.6.0",
  "crc32c",
  "everscale-types-proc",

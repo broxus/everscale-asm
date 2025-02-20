@@ -1456,7 +1456,7 @@ fn op_stsliceconst(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmE
             b.store_bit_one()?;
             b.store_small_uint(refs, 2)?;
             b.store_small_uint(l as u8, 3)?;
-            b.store_slice(c.as_slice_allow_pruned())?;
+            b.store_slice(c.as_slice_allow_exotic())?;
             write_slice_padding(padding, b)
         }
     }
@@ -1487,7 +1487,7 @@ fn write_pushslice(ctx: &mut Context, c: Cell) -> Result<(), Error> {
         let b = ctx.get_builder_ext(8 + 4 + bits + padding, refs + 1);
         b.store_u8(0x8b)?;
         b.store_small_uint(l as u8, 4)?;
-        b.store_slice(c.as_slice_allow_pruned())?;
+        b.store_slice(c.as_slice_allow_exotic())?;
         write_slice_padding(padding, b)
     } else if bits <= 248 && refs >= 1 {
         let l = (bits + 7) / 8;
@@ -1496,7 +1496,7 @@ fn write_pushslice(ctx: &mut Context, c: Cell) -> Result<(), Error> {
         b.store_u8(0x8c)?;
         b.store_small_uint(refs - 1, 2)?;
         b.store_small_uint(l as u8, 5)?;
-        b.store_slice(c.as_slice_allow_pruned())?;
+        b.store_slice(c.as_slice_allow_exotic())?;
         write_slice_padding(padding, b)
     } else {
         let l = (bits + 2) / 8;
@@ -1505,7 +1505,7 @@ fn write_pushslice(ctx: &mut Context, c: Cell) -> Result<(), Error> {
         b.store_u8(0x8d)?;
         b.store_small_uint(refs, 3)?;
         b.store_small_uint(l as u8, 7)?;
-        b.store_slice(c.as_slice_allow_pruned())?;
+        b.store_slice(c.as_slice_allow_exotic())?;
         write_slice_padding(padding, b)
     }
 }
@@ -1534,11 +1534,11 @@ fn op_pushcont(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError
         } else if bits <= 120 && refs == 0 {
             let b = ctx.get_builder(8 + bits);
             b.store_u8(0x90 | (bits / 8) as u8)?;
-            b.store_slice(c.as_slice_allow_pruned())
+            b.store_slice(c.as_slice_allow_exotic())
         } else {
             let b = ctx.get_builder_ext(16 + bits, refs + 1);
             b.store_u16(0x8e00 | ((refs as u16) << 7) | (bits / 8))?;
-            b.store_slice(c.as_slice_allow_pruned())
+            b.store_slice(c.as_slice_allow_exotic())
         }
     }
 

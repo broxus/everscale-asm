@@ -241,7 +241,7 @@ fn nat<'a>() -> impl Parser<'a, &'a str, BigInt, extra::Err<ParserError>> + Clon
 
     let number = choice((
         just("0x")
-            .ignore_then(num_slice.clone())
+            .ignore_then(num_slice)
             .try_map(|s, span| parse_int(s, 16, span)),
         just("0b")
             .ignore_then(num_slice)

@@ -1055,6 +1055,8 @@ fn register_stackops(t: &mut Opcodes) {
         "SETGLOBVAR" => 0xf860,
         "SETGLOB" => op_setglob,
 
+        "GETEXTRABALANCE" => 0xf880,
+
         "HASHCU" => 0xf900,
         "HASHSU" => 0xf901,
         "SHA256U" => 0xf902,

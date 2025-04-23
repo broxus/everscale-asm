@@ -294,4 +294,12 @@ mod tests {
         assert_eq!(code.reference(0).unwrap(), child_cell.as_ref());
         Ok(())
     }
+
+    #[test]
+    fn new_cell() -> anyhow::Result<()> {
+        let code = Code::assemble("NOP @newcell NOP")?;
+        let child_cell = Code::assemble("NOP")?;
+        assert_eq!(code.reference(0).unwrap(), child_cell.as_ref());
+        Ok(())
+    }
 }

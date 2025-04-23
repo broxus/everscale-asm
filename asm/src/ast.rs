@@ -25,6 +25,7 @@ pub struct Code<'a> {
 pub enum Stmt<'a> {
     Instr(Instr<'a>),
     Inline(Inline<'a>),
+    NewCell(#[allow(unused)] NewCell),
 }
 
 #[derive(Debug, Clone)]
@@ -39,6 +40,12 @@ pub struct Instr<'a> {
 pub struct Inline<'a> {
     pub span: Span,
     pub value: InstrArg<'a>,
+}
+
+#[derive(Debug, Clone)]
+pub struct NewCell {
+    #[allow(unused)]
+    pub span: Span,
 }
 
 #[derive(Debug, Clone)]
@@ -84,9 +91,14 @@ fn stmt<'a>() -> impl Parser<'a, &'a str, Stmt<'a>, extra::Err<ParserError>> {
                 })
             });
 
+        let jumpref = just("@newcell")
+            .padded_by(comment().repeated())
+            .padded()
+            .map_with(|_, e| Stmt::NewCell(NewCell { span: e.span() }));
+
         let instr = instr(stmt).map(Stmt::Instr);
 
-        choice((inline, instr))
+        choice((inline, jumpref, instr))
     })
 }
 

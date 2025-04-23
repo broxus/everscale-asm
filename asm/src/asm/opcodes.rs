@@ -18,8 +18,13 @@ use super::JoinResults;
 
 #[derive(Default)]
 pub struct Context {
-    stack: Vec<CellBuilder>,
+    stack: Vec<StackItem>,
     allow_invalid: bool,
+}
+
+struct StackItem {
+    inline: bool,
+    value: CellBuilder,
 }
 
 impl Context {
@@ -46,6 +51,13 @@ impl Context {
                     .store_cell_data(slice)
                     .with_span(inline.span)
             }
+            ast::Stmt::NewCell(_) => {
+                self.stack.push(StackItem {
+                    inline: false,
+                    value: Default::default(),
+                });
+                Ok(())
+            }
             ast::Stmt::Instr(instr) => {
                 let Some(handler) = opcodes.get(instr.ident) else {
                     return Err(AsmError::UnknownOpcode {
@@ -70,41 +82,55 @@ impl Context {
     fn get_builder_ext(&mut self, bits: u16, refs: u8) -> &mut CellBuilder {
         'last: {
             if let Some(last) = self.stack.last() {
-                if last.has_capacity(bits, refs) {
+                if last.value.has_capacity(bits, refs) {
                     break 'last;
                 }
             }
-            self.stack.push(Default::default());
+            self.stack.push(StackItem {
+                inline: true,
+                value: Default::default(),
+            });
         };
-        self.stack.last_mut().unwrap()
+        &mut self.stack.last_mut().unwrap().value
     }
 
     fn top_capacity(&self) -> (u16, u8) {
         match self.stack.last() {
-            Some(last) => (last.spare_capacity_bits(), last.spare_capacity_refs()),
+            Some(StackItem { value, .. }) => {
+                (value.spare_capacity_bits(), value.spare_capacity_refs())
+            }
             None => (MAX_BIT_LEN, MAX_REF_COUNT as u8),
         }
     }
 
     fn merge_stack(
-        mut stack: Vec<CellBuilder>,
+        mut stack: Vec<StackItem>,
         block_span: ast::Span,
     ) -> Result<CellBuilder, AsmError> {
         let cell_context = Cell::empty_context();
-        let mut result = None::<CellBuilder>;
+        let mut result = None::<StackItem>;
         while let Some(mut last) = stack.pop() {
-            if let Some(child) = result.take() {
-                if last.has_capacity(child.size_bits(), child.size_refs()) {
-                    last.store_slice(child.as_full_slice())
+            let StackItem { value, .. } = &mut last;
+
+            if let Some(StackItem {
+                value: child,
+                inline,
+            }) = result.take()
+            {
+                if inline && value.has_capacity(child.size_bits(), child.size_refs()) {
+                    value.store_slice(child.as_full_slice())
                 } else {
-                    last.store_reference(child.build_ext(cell_context).with_span(block_span)?)
+                    value.store_reference(child.build_ext(cell_context).with_span(block_span)?)
                 }
                 .with_span(block_span)?;
             }
             result = Some(last);
         }
 
-        Ok(result.unwrap_or_default())
+        Ok(match result {
+            Some(StackItem { value, .. }) => value,
+            None => CellBuilder::new(),
+        })
     }
 }
 

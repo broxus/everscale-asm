@@ -335,6 +335,28 @@ impl FromInstrArg<'_> for NatU11 {
     }
 }
 
+pub struct NatU12(pub u16);
+
+impl FromInstrArg<'_> for NatU12 {
+    fn from_instr_arg(arg: &ast::InstrArg<'_>) -> Result<Self, AsmError> {
+        match &arg.value {
+            ast::InstrArgValue::Nat(n) => {
+                if let Some(n) = n.to_u16() {
+                    if n <= 0xfff {
+                        return Ok(Self(n));
+                    }
+                }
+                Err(AsmError::OutOfRange(arg.span))
+            }
+            _ => Err(AsmError::ArgTypeMismatch {
+                span: arg.span,
+                expected: ArgType::Nat.expected_exact(),
+                found: arg.value.ty(),
+            }),
+        }
+    }
+}
+
 pub struct SReg(pub u8);
 
 impl FromInstrArg<'_> for SReg {

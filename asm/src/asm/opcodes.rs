@@ -164,6 +164,12 @@ fn register_stackops(t: &mut Opcodes) {
                 op_i8::<$base, { (stringify!($base).len() - 2) as u16 * 4 }>,
             ));+
         };
+        (@args $t:ident $($names:literal)|+ $base:literal u12) => {
+            $($t.insert(
+                $names,
+                op_u12::<$base, { (stringify!($base).len() - 2) as u16 * 4 }>,
+            ));+
+        };
         (@args $t:ident $($names:literal)|+ $base:literal c) => {
             $($t.insert(
                 $names,
@@ -745,6 +751,9 @@ fn register_stackops(t: &mut Opcodes) {
         "JMPREF" => 0xdb3d(ref),
         "JMPREFDATA" => 0xdb3e(ref),
         "RETDATA" => 0xdb3f,
+
+        "RUNVM" => 0xdb4(u12),
+        "RUNVMX" => 0xdb50,
 
         // Conditional and iterated execution primitives
         "IFRET" => 0xdc,
@@ -1930,6 +1939,16 @@ fn op_i8<const BASE: u32, const BITS: u16>(
 ) -> Result<(), AsmError> {
     let NatI8(s1) = instr.parse_args()?;
     write_op_1sr_l(ctx, BASE, BITS, s1 as u8).with_span(instr.span)
+}
+
+fn op_u12<const BASE: u32, const BITS: u16>(
+    ctx: &mut Context,
+    instr: &ast::Instr<'_>,
+) -> Result<(), AsmError> {
+    let NatU12(n) = instr.parse_args()?;
+    ctx.get_builder(24)
+        .store_uint(0xdb4000 | (n as u64), 24)
+        .with_span(instr.span)
 }
 
 fn op_2sr<const BASE: u32, const BITS: u16>(

@@ -277,4 +277,11 @@ mod tests {
         assert_eq!(code.as_slice_allow_exotic().load_uint(24)?, 0xcf873c);
         Ok(())
     }
+
+    #[test]
+    fn runvm() -> anyhow::Result<()> {
+        let code = Code::assemble("RUNVM 128")?;
+        assert_eq!(code.as_slice_allow_exotic().load_uint(24)?, 0xdb4000 | 128);
+        Ok(())
+    }
 }

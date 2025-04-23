@@ -284,4 +284,14 @@ mod tests {
         assert_eq!(code.as_slice_allow_exotic().load_uint(24)?, 0xdb4000 | 128);
         Ok(())
     }
+
+    #[test]
+    fn raw_cell() -> anyhow::Result<()> {
+        let child_code = "te6ccgEBBAEAHgABFP8A9KQT9LzyyAsBAgLOAwIABaNUQAAJ0IPAWpI=";
+        let child_cell = Boc::decode_base64(child_code)?;
+
+        let code = Code::assemble(&format!("PUSHREF {child_code}"))?;
+        assert_eq!(code.reference(0).unwrap(), child_cell.as_ref());
+        Ok(())
+    }
 }

@@ -3,6 +3,7 @@ use std::str::FromStr;
 use chumsky::text::TextExpected;
 use chumsky::util::MaybeRef;
 use chumsky::{prelude::*, DefaultExpected};
+use everscale_types::boc::Boc;
 use everscale_types::cell::{CellType, HashBytes};
 use everscale_types::prelude::{Cell, CellBuilder};
 use num_bigint::BigInt;
@@ -53,6 +54,7 @@ pub enum InstrArgValue<'a> {
     CReg(u8),
     Slice(Cell),
     Lib(Cell),
+    Cell(Cell),
     Block(Vec<Stmt<'a>>),
     Invalid,
 }
@@ -148,6 +150,10 @@ fn instr_arg<'a>(
         }),
         library_cell().map(|lib| {
             lib.map(InstrArgValue::Lib)
+                .unwrap_or(InstrArgValue::Invalid)
+        }),
+        raw_cell().map(|cell| {
+            cell.map(InstrArgValue::Cell)
                 .unwrap_or(InstrArgValue::Invalid)
         }),
     ))
@@ -360,6 +366,27 @@ fn library_cell<'a>() -> impl Parser<'a, &'a str, Option<Cell>, extra::Err<Parse
         })
 }
 
+fn raw_cell<'a>() -> impl Parser<'a, &'a str, Option<Cell>, extra::Err<ParserError>> + Clone {
+    let content_recovery = any()
+        .filter(|&c: &char| c != '}' && !c.is_whitespace())
+        .repeated();
+
+    just("te6ccg").rewind().ignore_then(
+        any()
+            .filter(|&c: &char| c != '}' && !c.is_whitespace())
+            .repeated()
+            .to_slice()
+            .try_map(move |s, span| match parse_cell_boc(s) {
+                Ok(cell) => Ok(Some(cell)),
+                Err(e) => Err(ParserError::InvalidCell {
+                    span,
+                    inner: e.into(),
+                }),
+            })
+            .recover_with(via_parser(content_recovery.map(|_| None))),
+    )
+}
+
 fn cell_slice<'a>() -> impl Parser<'a, &'a str, Option<Cell>, extra::Err<ParserError>> + Clone {
     let content_recovery = any()
         .filter(|&c: &char| c != '}' && !c.is_whitespace())
@@ -486,6 +513,10 @@ fn parse_bin_slice(s: &str) -> Result<Cell, SliceError> {
     builder.build().map_err(SliceError::CellError)
 }
 
+fn parse_cell_boc(s: &str) -> Result<Cell, CellError> {
+    Boc::decode_base64(s).map_err(Into::into)
+}
+
 fn parse_library_ref(s: &str) -> Result<Cell, LibraryError> {
     let hash = s.parse::<HashBytes>()?;
     let mut b = CellBuilder::new();
@@ -510,6 +541,8 @@ pub enum ParserError {
     InvalidControlRegister { span: Span, inner: anyhow::Error },
     #[error("invalid slice: {inner}")]
     InvalidSlice { span: Span, inner: anyhow::Error },
+    #[error("invalid cell: {inner}")]
+    InvalidCell { span: Span, inner: anyhow::Error },
     #[error("invalid library cell: {inner}")]
     InvalidLibrary { span: Span, inner: anyhow::Error },
     #[error("unknown error")]
@@ -524,6 +557,7 @@ impl ParserError {
             | Self::InvalidStackRegister { span, .. }
             | Self::InvalidControlRegister { span, .. }
             | Self::InvalidSlice { span, .. }
+            | Self::InvalidCell { span, .. }
             | Self::InvalidLibrary { span, .. } => Some(*span),
             Self::UnknownError => None,
         }
@@ -551,6 +585,10 @@ enum SliceError {
     #[error("cell build error: {0}")]
     CellError(#[from] everscale_types::error::Error),
 }
+
+#[derive(thiserror::Error, Debug)]
+#[error("invalid cell BOC: {0}")]
+struct CellError(#[from] everscale_types::boc::de::Error);
 
 #[derive(thiserror::Error, Debug)]
 enum LibraryError {

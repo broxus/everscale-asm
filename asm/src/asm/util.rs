@@ -419,10 +419,14 @@ pub struct Slice(pub Cell);
 impl FromInstrArg<'_> for Slice {
     fn from_instr_arg(arg: &ast::InstrArg<'_>) -> Result<Self, AsmError> {
         match &arg.value {
-            ast::InstrArgValue::Slice(cell) => Ok(Self(cell.clone())),
+            ast::InstrArgValue::Slice(cell) | ast::InstrArgValue::Cell(cell) => {
+                Ok(Self(cell.clone()))
+            }
             _ => Err(AsmError::ArgTypeMismatch {
                 span: arg.span,
-                expected: ArgType::Slice.expected_or(ArgType::Block),
+                expected: ArgType::Slice
+                    .expected_or(ArgType::Cell)
+                    .join(ArgType::Block),
                 found: arg.value.ty(),
             }),
         }
@@ -434,8 +438,9 @@ pub struct SliceOrCont<'a>(pub Either<Cell, (&'a [ast::Stmt<'a>], ast::Span)>);
 impl<'a> FromInstrArg<'a> for SliceOrCont<'a> {
     fn from_instr_arg(arg: &'a ast::InstrArg<'_>) -> Result<Self, AsmError> {
         Ok(Self(match &arg.value {
-            ast::InstrArgValue::Slice(cell) => Either::Left(cell.clone()),
-            ast::InstrArgValue::Lib(lib) => Either::Left(lib.clone()),
+            ast::InstrArgValue::Slice(cell)
+            | ast::InstrArgValue::Lib(cell)
+            | ast::InstrArgValue::Cell(cell) => Either::Left(cell.clone()),
             ast::InstrArgValue::Block(items) => Either::Right((items.as_slice(), arg.span)),
             _ => {
                 return Err(AsmError::ArgTypeMismatch {

@@ -50,6 +50,7 @@ impl ast::InstrArgValue<'_> {
             ast::InstrArgValue::CReg(_) => ArgType::ControlRegister,
             ast::InstrArgValue::Slice(_) => ArgType::Slice,
             ast::InstrArgValue::Lib(_) => ArgType::Library,
+            ast::InstrArgValue::Cell(_) => ArgType::Cell,
             ast::InstrArgValue::Block(_) => ArgType::Block,
             ast::InstrArgValue::Invalid => ArgType::Invalid,
         }
@@ -63,6 +64,7 @@ pub enum ArgType {
     ControlRegister,
     Slice,
     Library,
+    Cell,
     Block,
     Invalid,
 }
@@ -72,8 +74,8 @@ impl ArgType {
         ExpectedArgType::Exact(self)
     }
 
-    pub fn expected_or(self, other: ArgType) -> ExpectedArgType {
-        ExpectedArgType::OneOf(self, Box::new(other.expected_exact()))
+    pub fn expected_or<T: Into<ExpectedArgType>>(self, other: T) -> ExpectedArgType {
+        ExpectedArgType::OneOf(self, Box::new(other.into()))
     }
 }
 
@@ -84,10 +86,18 @@ impl std::fmt::Display for ArgType {
             Self::StackRegister => "stack register",
             Self::ControlRegister => "control register",
             Self::Slice => "cell slice",
+            Self::Cell => "cell",
             Self::Library => "library hash",
             Self::Block => "instruction block",
             Self::Invalid => "invalid",
         })
+    }
+}
+
+impl From<ArgType> for ExpectedArgType {
+    #[inline]
+    fn from(value: ArgType) -> Self {
+        Self::Exact(value)
     }
 }
 
@@ -98,7 +108,7 @@ pub enum ExpectedArgType {
 }
 
 impl ExpectedArgType {
-    pub fn join(mut self, other: ExpectedArgType) -> Self {
+    pub fn join<T: Into<ExpectedArgType>>(mut self, other: T) -> Self {
         fn join_inner(this: &mut ExpectedArgType, other: ExpectedArgType) {
             let mut value = std::mem::replace(this, ExpectedArgType::Exact(ArgType::Invalid));
             match &mut value {
@@ -112,7 +122,7 @@ impl ExpectedArgType {
             }
         }
 
-        join_inner(&mut self, other);
+        join_inner(&mut self, other.into());
         self
     }
 }

@@ -1062,6 +1062,7 @@ fn register_stackops(t: &mut Opcodes) {
         "GRAMTOGAS" => 0xf804,
         "GASTOGRAM" => 0xf805,
         "GASREMAINING" => 0xf806,
+        "GASCONSUMED" => 0xf807,
         "COMMIT" => 0xf80f,
 
         "RANDU256" => 0xf810,
@@ -1792,7 +1793,7 @@ fn op_throw(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
 
     match id.to_u16() {
         Some(id @ 0x00..=0x3f) => ctx.get_builder(16).store_u16(0xf200 | id),
-        Some(id @ 0x100..=0x7ff) => ctx.get_builder(24).store_uint(0xf2c000 | (id as u64), 24),
+        Some(id @ 0x40..=0x7ff) => ctx.get_builder(24).store_uint(0xf2c000 | (id as u64), 24),
         _ => return Err(AsmError::OutOfRange(nat_span)),
     }
     .with_span(instr.span)

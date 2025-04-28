@@ -5,6 +5,7 @@ use chumsky::util::MaybeRef;
 use chumsky::{prelude::*, DefaultExpected};
 use everscale_types::boc::Boc;
 use everscale_types::cell::{CellType, HashBytes};
+use everscale_types::crc::crc_16;
 use everscale_types::prelude::{Cell, CellBuilder};
 use num_bigint::BigInt;
 use num_traits::Num;
@@ -55,6 +56,27 @@ pub struct InstrArg<'a> {
 }
 
 #[derive(Debug, Clone)]
+pub struct MethodId<'a> {
+    #[allow(unused)]
+    pub span: Span,
+    pub value: MethodIdValue<'a>,
+}
+
+impl MethodId<'_> {
+    pub fn as_int(&self) -> u32 {
+        let crc = crc_16(self.value.text.as_bytes());
+        crc as u32 | 0x10000
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct MethodIdValue<'a> {
+    #[allow(unused)]
+    pub span: Span,
+    pub text: &'a str,
+}
+
+#[derive(Debug, Clone)]
 pub enum InstrArgValue<'a> {
     Nat(BigInt),
     SReg(i16),
@@ -63,6 +85,7 @@ pub enum InstrArgValue<'a> {
     Lib(Cell),
     Cell(Cell),
     Block(Vec<Stmt<'a>>),
+    MethodId(MethodId<'a>),
     Invalid,
 }
 
@@ -146,6 +169,13 @@ fn instr_arg<'a>(
 ) -> impl Parser<'a, &'a str, InstrArg<'a>, extra::Err<ParserError>> + Clone {
     choice((
         nat().map(InstrArgValue::Nat),
+        just("@method")
+            .rewind()
+            .ignore_then(method_id().map(|value| {
+                value
+                    .map(InstrArgValue::MethodId)
+                    .unwrap_or(InstrArgValue::Invalid)
+            })),
         stack_register().map(|idx| {
             idx.map(InstrArgValue::SReg)
                 .unwrap_or(InstrArgValue::Invalid)
@@ -264,7 +294,10 @@ fn nat<'a>() -> impl Parser<'a, &'a str, BigInt, extra::Err<ParserError>> + Clon
         just("0b")
             .ignore_then(num_slice)
             .try_map(|s, span| parse_int(s, 2, span)),
-        text::int(10).try_map(|s, span| parse_int(s, 10, span)),
+        any()
+            .filter(|c: &char| c.is_ascii_digit())
+            .rewind()
+            .ignore_then(num_slice.try_map(|s, span| parse_int(s, 10, span))),
     ));
 
     choice((
@@ -274,7 +307,7 @@ fn nat<'a>() -> impl Parser<'a, &'a str, BigInt, extra::Err<ParserError>> + Clon
     .then_ignore(empty().and_is(choice((
         end(),
         text::whitespace().at_least(1),
-        just(',').ignored(),
+        one_of(",{}").ignored(),
     ))))
 }
 
@@ -335,7 +368,7 @@ fn cont_block<'a>(
     stmt: Recursive<dyn Parser<'a, &'a str, Stmt<'a>, extra::Err<ParserError>> + 'a>,
 ) -> impl Parser<'a, &'a str, Vec<Stmt<'a>>, extra::Err<ParserError>> + Clone {
     stmt.padded().repeated().collect().delimited_by(
-        just('{'),
+        just('{').padded(),
         just('}')
             .ignored()
             .recover_with(via_parser(end()))
@@ -397,6 +430,36 @@ fn raw_cell<'a>() -> impl Parser<'a, &'a str, Option<Cell>, extra::Err<ParserErr
             })
             .recover_with(via_parser(content_recovery.map(|_| None))),
     )
+}
+
+fn method_id<'a>() -> impl Parser<'a, &'a str, Option<MethodId<'a>>, extra::Err<ParserError>> + Clone
+{
+    let until_next_arg_or_eof = any()
+        .filter(|&c: &char| c != '}' && c != ')' && c != ',' && !c.is_whitespace())
+        .repeated();
+
+    just("@method(")
+        .ignore_then(
+            none_of(")")
+                .repeated()
+                .to_slice()
+                .try_map(move |s, mut span| match parse_method_name(s, &mut span) {
+                    Ok(text) => Ok(Some(MethodIdValue { span, text })),
+                    Err(e) => Err(ParserError::InvalidMethodId {
+                        span,
+                        inner: e.into(),
+                    }),
+                })
+                .recover_with(via_parser(until_next_arg_or_eof.map(|_| None))),
+        )
+        .then_ignore(just(')'))
+        .map_with(|value, e| {
+            value.map(|value| MethodId {
+                span: e.span(),
+                value,
+            })
+        })
+        .recover_with(via_parser(until_next_arg_or_eof.map(|_| None)))
 }
 
 fn cell_slice<'a>() -> impl Parser<'a, &'a str, Option<Cell>, extra::Err<ParserError>> + Clone {
@@ -538,6 +601,33 @@ fn parse_library_ref(s: &str) -> Result<Cell, LibraryError> {
     b.build().map_err(LibraryError::CellError)
 }
 
+fn parse_method_name<'a>(mut s: &'a str, span: &mut Span) -> Result<&'a str, MethodIdError> {
+    // Shift span start by the trimmed prefix.
+    let mut original = s;
+    s = s.trim_start();
+    span.start += original.len() - s.len();
+
+    // Shift span end by the trimmed suffix.
+    original = s;
+    s = s.trim_end();
+    span.end -= original.len() - s.len();
+
+    // Validate method name.
+    let mut chars = s.chars();
+    let Some(first) = chars.next() else {
+        return Err(MethodIdError::Empty);
+    };
+    if !first.is_ascii_alphabetic() {
+        return Err(MethodIdError::InvalidPrefix);
+    }
+    for c in chars {
+        if !c.is_ascii_alphanumeric() && c != '_' {
+            return Err(MethodIdError::UnexpectedChar(c));
+        }
+    }
+    Ok(s)
+}
+
 #[derive(thiserror::Error, Debug)]
 pub enum ParserError {
     #[error("unexpected character found: {found:?}")]
@@ -557,6 +647,8 @@ pub enum ParserError {
     InvalidCell { span: Span, inner: anyhow::Error },
     #[error("invalid library cell: {inner}")]
     InvalidLibrary { span: Span, inner: anyhow::Error },
+    #[error("invalid method id: {inner}")]
+    InvalidMethodId { span: Span, inner: anyhow::Error },
     #[error("unknown error")]
     UnknownError,
 }
@@ -570,7 +662,8 @@ impl ParserError {
             | Self::InvalidControlRegister { span, .. }
             | Self::InvalidSlice { span, .. }
             | Self::InvalidCell { span, .. }
-            | Self::InvalidLibrary { span, .. } => Some(*span),
+            | Self::InvalidLibrary { span, .. }
+            | Self::InvalidMethodId { span, .. } => Some(*span),
             Self::UnknownError => None,
         }
     }
@@ -601,6 +694,16 @@ enum SliceError {
 #[derive(thiserror::Error, Debug)]
 #[error("invalid cell BOC: {0}")]
 struct CellError(#[from] everscale_types::boc::de::Error);
+
+#[derive(thiserror::Error, Debug)]
+pub enum MethodIdError {
+    #[error("method name cannot be empty")]
+    Empty,
+    #[error("method name must start with a letter")]
+    InvalidPrefix,
+    #[error("unexpected char `{0}` in method name")]
+    UnexpectedChar(char),
+}
 
 #[derive(thiserror::Error, Debug)]
 enum LibraryError {

@@ -1,6 +1,7 @@
 mod opcodes;
 mod util;
 
+use chumsky::span::Span;
 use everscale_types::prelude::*;
 
 use self::opcodes::{cp0, Context};
@@ -46,6 +47,7 @@ impl ast::InstrArgValue<'_> {
     fn ty(&self) -> ArgType {
         match self {
             ast::InstrArgValue::Nat(_) => ArgType::Nat,
+            &ast::InstrArgValue::MethodId(_) => ArgType::MethodId,
             ast::InstrArgValue::SReg(_) => ArgType::StackRegister,
             ast::InstrArgValue::CReg(_) => ArgType::ControlRegister,
             ast::InstrArgValue::Slice(_) => ArgType::Slice,
@@ -60,6 +62,7 @@ impl ast::InstrArgValue<'_> {
 #[derive(Debug, Copy, Clone)]
 pub enum ArgType {
     Nat,
+    MethodId,
     StackRegister,
     ControlRegister,
     Slice,
@@ -83,6 +86,7 @@ impl std::fmt::Display for ArgType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
             Self::Nat => "number",
+            Self::MethodId => "method id",
             Self::StackRegister => "stack register",
             Self::ControlRegister => "control register",
             Self::Slice => "cell slice",
@@ -205,7 +209,7 @@ impl AsmError {
             | Self::WrongUsage { span, .. }
             | Self::StoreError { span, .. } => *span,
             Self::Multiple(items) => match items.as_ref() {
-                [] => ast::Span::splat(0),
+                [] => ast::Span::new((), 0..0),
                 [first, rest @ ..] => {
                     let mut res = first.span();
                     for item in rest {

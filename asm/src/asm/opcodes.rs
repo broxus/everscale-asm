@@ -1371,7 +1371,7 @@ fn op_index3(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> 
 
 fn op_pushint(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
     let WithSpan(Nat(n), nat_span) = instr.parse_args()?;
-    write_pushint(ctx, instr.span, nat_span, n)
+    write_pushint(ctx, instr.span, nat_span, &n)
 }
 
 fn write_pushint(
@@ -1439,7 +1439,7 @@ fn op_pushpow2(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError
 
 fn op_pushintx(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
     let WithSpan(Nat(n), span) = instr.parse_args()?;
-    let bitsize = bitsize(n);
+    let bitsize = bitsize(&n);
 
     if bitsize <= 8 {
         // NOTE: base=1 && pow2=0 case will be handled here
@@ -1450,7 +1450,7 @@ fn op_pushintx(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError
 
     // NOTE: `n` is never zero at this point
     let pow2 = n.trailing_zeros().unwrap();
-    let base = n >> pow2;
+    let base = &n >> pow2;
     if base.magnitude().is_one() {
         // NOTE: `pow2` is never zero at this point
         let b = ctx.get_builder(16);
@@ -1468,7 +1468,7 @@ fn op_pushintx(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError
         write_op_1sr_l(ctx, 0xaa, 8, (pow2 - 1) as _).with_span(instr.span)
     } else {
         if pow2 == 0 {
-            let mut base = !n;
+            let mut base = !n.clone();
             let pow2 = base.trailing_zeros().unwrap();
             base >>= pow2;
             if base.sign() == Sign::Minus && base.magnitude().is_one() {
@@ -1478,7 +1478,7 @@ fn op_pushintx(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError
         }
 
         // Fallback to PUSHINT
-        write_pushint(ctx, instr.span, span, n)
+        write_pushint(ctx, instr.span, span, &n)
     }
 }
 
@@ -1755,7 +1755,7 @@ fn op_call(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
             .store_uint(0xf10000 | ((id as u64) & 0x3fff), 24),
         _ => {
             // PUSHINT id
-            write_pushint(ctx, instr.span, nat_span, id)?;
+            write_pushint(ctx, instr.span, nat_span, &id)?;
             // PUSH c3
             op_preparevar(ctx, instr)?;
             // EXECUTE
@@ -1774,7 +1774,7 @@ fn op_jmp(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
             .store_uint(0xf14000 | ((id as u64) & 0x3fff), 24),
         _ => {
             // PUSHINT id
-            write_pushint(ctx, instr.span, nat_span, id)?;
+            write_pushint(ctx, instr.span, nat_span, &id)?;
             // PUSH c3
             op_preparevar(ctx, instr)?;
             // JMPX
@@ -1794,7 +1794,7 @@ fn op_prepare(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError>
             .with_span(instr.span),
         _ => {
             // PUSHINT id
-            write_pushint(ctx, instr.span, nat_span, id)?;
+            write_pushint(ctx, instr.span, nat_span, &id)?;
             // PUSH c3
             op_preparevar(ctx, instr)
         }

@@ -17,6 +17,9 @@
         },
         {
           "include": "#instruction_arg"
+        },
+        {
+          "include": "#intrinsic"
         }
       ]
     },
@@ -25,6 +28,14 @@
         {
           "name": "comment.line.double-slash.tvm",
           "match": "(//.*$)"
+        }
+      ]
+    },
+    "intrinsic": {
+      "patterns": [
+        {
+          "name": "keyword.other.tvm",
+          "match": "@[a-zA-Z0-9#_]+"
         }
       ]
     },
@@ -40,27 +51,45 @@
       "patterns": [
         {
           "name": "constant.numeric.tvm",
-          "match": "(-?[0-9]+)(?=[\\s,}])"
+          "match": "(-?(0x|0b)[0-9a-fA-F]+)"
         },
         {
           "name": "constant.numeric.tvm",
-          "match": "(-?(0x|0b)[0-9a-fA-F]+)(?=[\\s,}])"
+          "match": "(-?[0-9]+)"
         },
         {
-          "name": "constant.numeric.tvm",
-          "match": "(b{[^}]*})(?=[\\s,}])"
+          "name": "keyword.other.tvm",
+          "begin": "[bx@]{",
+          "end": "}",
+          "patterns": [
+            {
+              "name": "constant.numeric.tvm",
+              "match": "[^}]*"
+            }
+          ]
         },
         {
-          "name": "constant.numeric.tvm",
-          "match": "(x{[^}]*})(?=[\\s,}])"
+          "name": "keyword.other.tvm",
+          "begin": "@method\\(",
+          "end": "\\)",
+          "patterns": [
+            {
+              "name": "string.quoted.other.tvm",
+              "match": "[^\\)]*"
+            }
+          ]
         },
         {
-          "name": "support.type.tvm",
-          "match": "(s?\\((-\\d)?\\))(?=[\\s,}])"
+          "name": "storage.type.tvm",
+          "match": "(s?\\((-\\d)?\\))"
         },
         {
-          "name": "support.type.tvm",
-          "match": "([cs]\\d+)(?=[\\s,}])"
+          "name": "storage.type.tvm",
+          "match": "([cs]\\d+)"
+        },
+        {
+          "name": "support.constant",
+          "match": "(te6ccg[A-Za-z0-9+/=]+)"
         }
       ]
     }

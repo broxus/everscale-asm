@@ -152,12 +152,13 @@ where
     }
 }
 
-pub struct Nat<'a>(pub &'a BigInt);
+pub struct Nat(pub BigInt);
 
-impl<'a> FromInstrArg<'a> for Nat<'a> {
+impl<'a> FromInstrArg<'a> for Nat {
     fn from_instr_arg(arg: &'a ast::InstrArg<'_>) -> Result<Self, AsmError> {
         match &arg.value {
-            ast::InstrArgValue::Nat(n) => Ok(Self(n)),
+            ast::InstrArgValue::Nat(n) => Ok(Self(n.clone())),
+            ast::InstrArgValue::MethodId(m) => Ok(Self(BigInt::from(m.as_int()))),
             _ => Err(AsmError::ArgTypeMismatch {
                 span: arg.span,
                 expected: ArgType::Nat.expected_exact(),

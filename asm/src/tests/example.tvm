@@ -29,6 +29,13 @@ IFREFELSEREF {
 }, {
   PUSHINT 2
 }
-
 // Insert raw slices into code
 @inline x{a924}
+
+@inline x{a924}
+
+PUSHINT @method(get_name)
+
+PUSHREF @{0000000000000000000000000000000000000000000000000000000000000000}
+
+PUSHREF te6ccgEBAQEAAgAAAA==

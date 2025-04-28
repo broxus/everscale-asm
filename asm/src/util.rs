@@ -42,7 +42,7 @@ pub fn store_int_to_builder(
                 Cow::Borrowed(int)
             };
 
-            let minimal_bytes = ((bits + 7) / 8) as usize;
+            let minimal_bytes = bits.div_ceil(8) as usize;
 
             let mut bytes = int.to_signed_bytes_le();
             let prefix = bytes

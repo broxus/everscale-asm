@@ -1093,6 +1093,19 @@ fn register_stackops(t: &mut Opcodes) {
 
         "GETEXTRABALANCE" => 0xf880,
 
+        "INMSGPARAMS" => 0xf88111,
+
+        "INMSG_BOUNCE" => 0xf890,
+        "INMSG_BOUNCED" => 0xf891,
+        "INMSG_SRC" => 0xf892,
+        "INMSG_FWDFEE" => 0xf893,
+        "INMSG_LT" => 0xf894,
+        "INMSG_UTIME" => 0xf895,
+        "INMSG_ORIGVALUE" => 0xf896,
+        "INMSG_VALUE" => 0xf897,
+        "INMSG_VALUEEXTRA" => 0xf898,
+        "INMSG_STATEINIT" => 0xf899,
+
         "HASHCU" => 0xf900,
         "HASHSU" => 0xf901,
         "SHA256U" => 0xf902,
@@ -1528,7 +1541,7 @@ fn write_pushslice(ctx: &mut Context, c: Cell) -> Result<(), Error> {
         b.store_slice(c.as_slice_allow_exotic())?;
         write_slice_padding(padding, b)
     } else if bits <= 248 && refs >= 1 {
-        let l = (bits + 7) / 8;
+        let l = bits.div_ceil(8);
         let padding = l * 8 + 1 - bits;
         let b = ctx.get_builder_ext(8 + 2 + 5 + bits + padding, refs + 1);
         b.store_u8(0x8c)?;

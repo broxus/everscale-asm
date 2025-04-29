@@ -14,7 +14,7 @@ use crate::asm::AsmError;
 use crate::ast;
 use crate::util::*;
 
-use super::JoinResults;
+use super::{ArgType, JoinResults};
 
 #[derive(Default)]
 pub struct Context {
@@ -1035,7 +1035,7 @@ fn register_stackops(t: &mut Opcodes) {
         "DICTIGETEXEC" => 0xf4a2,
         "DICTUGETEXEC" => 0xf4a3,
 
-        // TODO: DICTPUSHCONST
+        "DICTPUSHCONST" => op_dictpushconst,
 
         "PFXDICTGETQ" => 0xf4a8,
         "PFXDICTGET" => 0xf4a9,
@@ -1371,7 +1371,7 @@ fn op_index3(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> 
 
 fn op_pushint(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
     let WithSpan(Nat(n), nat_span) = instr.parse_args()?;
-    write_pushint(ctx, instr.span, nat_span, &n)
+    write_pushint(ctx, instr.span, nat_span, n)
 }
 
 fn write_pushint(
@@ -1389,7 +1389,7 @@ fn write_pushint(
         }
     }
 
-    let bitsize = bitsize(n);
+    let bitsize = bitsize(n, true);
     if bitsize > 257 {
         return Err(AsmError::OutOfRange(nat_span));
     }
@@ -1398,18 +1398,18 @@ fn write_pushint(
         if bitsize <= 8 {
             let b = ctx.get_builder(16);
             b.store_u8(0x80)?;
-            store_int_to_builder(b, n, 8)
+            store_int_to_builder(n, 8, true, b)
         } else if bitsize <= 16 {
             let b = ctx.get_builder(24);
             b.store_u8(0x81)?;
-            store_int_to_builder(b, n, 16)
+            store_int_to_builder(n, 16, true, b)
         } else {
             let l = (bitsize + 4) / 8;
             let value_bits = 3 + l * 8;
             let b = ctx.get_builder(13 + value_bits);
             b.store_u8(0x82)?;
             b.store_small_uint((l - 2) as u8, 5)?;
-            store_int_to_builder(b, n, value_bits)
+            store_int_to_builder(n, value_bits, true, b)
         }
     }
 
@@ -1439,7 +1439,7 @@ fn op_pushpow2(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError
 
 fn op_pushintx(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
     let WithSpan(Nat(n), span) = instr.parse_args()?;
-    let bitsize = bitsize(&n);
+    let bitsize = bitsize(n, true);
 
     if bitsize <= 8 {
         // NOTE: base=1 && pow2=0 case will be handled here
@@ -1450,7 +1450,7 @@ fn op_pushintx(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError
 
     // NOTE: `n` is never zero at this point
     let pow2 = n.trailing_zeros().unwrap();
-    let base = &n >> pow2;
+    let base = n >> pow2;
     if base.magnitude().is_one() {
         // NOTE: `pow2` is never zero at this point
         let b = ctx.get_builder(16);
@@ -1468,7 +1468,7 @@ fn op_pushintx(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError
         write_op_1sr_l(ctx, 0xaa, 8, (pow2 - 1) as _).with_span(instr.span)
     } else {
         if pow2 == 0 {
-            let mut base = !n.clone();
+            let mut base = !n;
             let pow2 = base.trailing_zeros().unwrap();
             base >>= pow2;
             if base.sign() == Sign::Minus && base.magnitude().is_one() {
@@ -1478,7 +1478,7 @@ fn op_pushintx(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError
         }
 
         // Fallback to PUSHINT
-        write_pushint(ctx, instr.span, span, &n)
+        write_pushint(ctx, instr.span, span, n)
     }
 }
 
@@ -1755,7 +1755,7 @@ fn op_call(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
             .store_uint(0xf10000 | ((id as u64) & 0x3fff), 24),
         _ => {
             // PUSHINT id
-            write_pushint(ctx, instr.span, nat_span, &id)?;
+            write_pushint(ctx, instr.span, nat_span, id)?;
             // PUSH c3
             op_preparevar(ctx, instr)?;
             // EXECUTE
@@ -1774,7 +1774,7 @@ fn op_jmp(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
             .store_uint(0xf14000 | ((id as u64) & 0x3fff), 24),
         _ => {
             // PUSHINT id
-            write_pushint(ctx, instr.span, nat_span, &id)?;
+            write_pushint(ctx, instr.span, nat_span, id)?;
             // PUSH c3
             op_preparevar(ctx, instr)?;
             // JMPX
@@ -1794,7 +1794,7 @@ fn op_prepare(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError>
             .with_span(instr.span),
         _ => {
             // PUSHINT id
-            write_pushint(ctx, instr.span, nat_span, &id)?;
+            write_pushint(ctx, instr.span, nat_span, id)?;
             // PUSH c3
             op_preparevar(ctx, instr)
         }
@@ -1858,6 +1858,130 @@ fn op_throwargifnot(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), Asm
 fn op_tryargs(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
     let (NatU4(s1), NatU4(s2)) = instr.parse_args()?;
     write_op_2sr(ctx, 0xf3, 8, s1, s2).with_span(instr.span)
+}
+
+fn op_dictpushconst(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {
+    use everscale_types::dict;
+
+    let (NatU10(n), dict) = instr.parse_args::<(_, &ast::InstrArg<'_>)>()?;
+    let dict_span = dict.span;
+    let ast::InstrArgValue::JumpTable(dict) = &dict.value else {
+        return Err(AsmError::ArgTypeMismatch {
+            span: dict.span,
+            found: dict.value.ty(),
+            expected: ArgType::JumpTable.expected_exact(),
+        });
+    };
+
+    let mut errors = Vec::new();
+
+    let mut result = None::<Cell>;
+    for method in &dict.methods {
+        let key = match &method.key.data {
+            ast::JumpTableItemKeyData::Nat(n) => Some(n),
+            ast::JumpTableItemKeyData::MethodId(m) => Some(&m.value.computed),
+            ast::JumpTableItemKeyData::Invalid => {
+                errors.push(AsmError::InvalidJumpTableKey(method.key.span));
+                None
+            }
+        };
+
+        let value = match &method.value.data {
+            ast::JumpTableItemValueData::Block(value) => Some(SliceOrCont(Either::Right((
+                value.as_slice(),
+                method.value.span,
+            )))),
+            ast::JumpTableItemValueData::Invalid => {
+                errors.push(AsmError::InvalidJumpTableValue(method.value.span));
+                None
+            }
+        };
+
+        let mut kb;
+        let key = match key {
+            Some(key) => {
+                kb = CellBuilder::new();
+                if store_int_to_builder(key, n, key.sign() == Sign::Minus, &mut kb).is_ok() {
+                    Some(kb.as_data_slice())
+                } else {
+                    errors.push(AsmError::TooBigInteger(method.key.span));
+                    None
+                }
+            }
+            None => None,
+        };
+
+        let value = match value {
+            Some(value) => {
+                let mut ctx = Context {
+                    stack: Vec::new(),
+                    allow_invalid: ctx.allow_invalid,
+                };
+                match value.into_cell(&mut ctx) {
+                    Ok(value) => Some(value),
+                    Err(e) if ctx.allow_invalid => {
+                        errors.push(e);
+                        None
+                    }
+                    Err(e) => return Err(e),
+                }
+            }
+            None => None,
+        };
+
+        if let (Some(mut key), Some(value)) = (key, value) {
+            if let Ok(value) = value.as_slice() {
+                let prev_key = key;
+                let prev_result = result.clone();
+                match dict::dict_insert(
+                    &mut result,
+                    &mut key,
+                    n,
+                    &value,
+                    dict::SetMode::Add,
+                    Cell::empty_context(),
+                ) {
+                    Ok(true) => continue,
+                    Ok(false) => return Err(AsmError::DuplicateJumpTableEntry(method.key.span)),
+                    Err(_) => {
+                        result = prev_result;
+                        key = prev_key;
+                    }
+                }
+            }
+
+            match dict::dict_insert(
+                &mut result,
+                &mut key,
+                n,
+                &value,
+                dict::SetMode::Add,
+                Cell::empty_context(),
+            ) {
+                Ok(true) => {}
+                Ok(false) => return Err(AsmError::DuplicateJumpTableEntry(method.key.span)),
+                Err(e) => {
+                    errors.push(AsmError::StoreError {
+                        inner: e,
+                        span: method.value.span,
+                    });
+                }
+            }
+        }
+    }
+
+    if !errors.is_empty() {
+        return Err(AsmError::Multiple(errors.into()));
+    }
+
+    let Some(result) = result else {
+        return Err(AsmError::EmptyJumpTable(dict_span));
+    };
+
+    let b = ctx.get_builder_ext(24, 1);
+    b.store_uint(0xf4a400_u64 | n as u64, 24)
+        .with_span(instr.span)?;
+    b.store_reference(result).with_span(instr.span)
 }
 
 fn op_getglob(ctx: &mut Context, instr: &ast::Instr<'_>) -> Result<(), AsmError> {

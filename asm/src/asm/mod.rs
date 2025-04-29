@@ -54,6 +54,7 @@ impl ast::InstrArgValue<'_> {
             ast::InstrArgValue::Lib(_) => ArgType::Library,
             ast::InstrArgValue::Cell(_) => ArgType::Cell,
             ast::InstrArgValue::Block(_) => ArgType::Block,
+            ast::InstrArgValue::JumpTable(_) => ArgType::JumpTable,
             ast::InstrArgValue::Invalid => ArgType::Invalid,
         }
     }
@@ -69,6 +70,7 @@ pub enum ArgType {
     Library,
     Cell,
     Block,
+    JumpTable,
     Invalid,
 }
 
@@ -93,6 +95,7 @@ impl std::fmt::Display for ArgType {
             Self::Cell => "cell",
             Self::Library => "library hash",
             Self::Block => "instruction block",
+            Self::JumpTable => "jump table",
             Self::Invalid => "invalid",
         })
     }
@@ -166,6 +169,16 @@ pub enum AsmError {
     },
     #[error("invalid register")]
     InvalidRegister(ast::Span),
+    #[error("invalid jump table key")]
+    InvalidJumpTableKey(ast::Span),
+    #[error("invalid jump table value")]
+    InvalidJumpTableValue(ast::Span),
+    #[error("duplicate jump table entry")]
+    DuplicateJumpTableEntry(ast::Span),
+    #[error("too big integer")]
+    TooBigInteger(ast::Span),
+    #[error("empty jump table")]
+    EmptyJumpTable(ast::Span),
     #[error("too many args")]
     TooManyArgs(ast::Span),
     #[error("not enough args")]
@@ -203,6 +216,11 @@ impl AsmError {
             | Self::UnalignedCont { span, .. }
             | Self::ArgTypeMismatch { span, .. }
             | Self::InvalidRegister(span)
+            | Self::InvalidJumpTableKey(span)
+            | Self::InvalidJumpTableValue(span)
+            | Self::DuplicateJumpTableEntry(span)
+            | Self::TooBigInteger(span)
+            | Self::EmptyJumpTable(span)
             | Self::TooManyArgs(span)
             | Self::NotEnoughArgs(span)
             | Self::OutOfRange(span)

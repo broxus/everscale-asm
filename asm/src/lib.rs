@@ -302,4 +302,30 @@ mod tests {
         assert_eq!(code.reference(0).unwrap(), child_cell.as_ref());
         Ok(())
     }
+
+    #[test]
+    fn dictpushconst() -> anyhow::Result<()> {
+        let code = Code::assemble(
+            r#"
+            SETCP 0
+            DICTPUSHCONST 19, [
+                0 => {
+                    DUP
+                    CALLDICT 22
+                    INC
+                }
+                22 => {
+                    MUL
+                }
+            ]
+            DICTIGETJMPZ
+            THROWARG 11
+            "#,
+        )?;
+
+        let expected =
+            Boc::decode_base64("te6ccgEBBAEAHgABFP8A9KQT9LzyyAsBAgLOAwIABaNUQAAJ0IPAWpI=")?;
+        assert_eq!(code, expected);
+        Ok(())
+    }
 }

@@ -8,42 +8,42 @@ use crate::ast;
 
 use super::{ArgType, JoinResults};
 
-pub trait ParseArgs {
-    fn parse_args<'a, T: FromInstrArgs<'a>>(&'a self) -> Result<T, AsmError>;
+pub trait ParseArgs<'s> {
+    fn parse_args<'a, T: FromInstrArgs<'a, 's>>(&'a self) -> Result<T, AsmError>;
 }
 
-impl ParseArgs for ast::Instr<'_> {
+impl<'s> ParseArgs<'s> for ast::Instr<'s> {
     #[inline]
-    fn parse_args<'a, T: FromInstrArgs<'a>>(&'a self) -> Result<T, AsmError> {
+    fn parse_args<'a, T: FromInstrArgs<'a, 's>>(&'a self) -> Result<T, AsmError> {
         T::from_instr_args(self.ident_span, &self.args)
     }
 }
 
-impl ParseArgs for ast::Inline<'_> {
+impl<'s> ParseArgs<'s> for ast::Inline<'s> {
     #[inline]
-    fn parse_args<'a, T: FromInstrArgs<'a>>(&'a self) -> Result<T, AsmError> {
+    fn parse_args<'a, T: FromInstrArgs<'a, 's>>(&'a self) -> Result<T, AsmError> {
         T::from_instr_args(self.span, std::slice::from_ref(&self.value))
     }
 }
 
-pub trait FromInstrArgs<'a>: Sized {
+pub trait FromInstrArgs<'a, 's>: Sized {
     fn from_instr_args(
         instr_span: ast::Span,
-        args: &'a [ast::InstrArg<'_>],
+        args: &'a [ast::InstrArg<'s>],
     ) -> Result<Self, AsmError>;
 }
 
-impl<'a, T: FromInstrArg<'a>> FromInstrArgs<'a> for T {
+impl<'a, 's, T: FromInstrArg<'a, 's>> FromInstrArgs<'a, 's> for T {
     fn from_instr_args(
         instr_span: ast::Span,
-        args: &'a [ast::InstrArg<'_>],
+        args: &'a [ast::InstrArg<'s>],
     ) -> Result<Self, AsmError> {
         let (s,) = <_>::from_instr_args(instr_span, args)?;
         Ok(s)
     }
 }
 
-impl FromInstrArgs<'_> for () {
+impl FromInstrArgs<'_, '_> for () {
     fn from_instr_args(_: ast::Span, args: &[ast::InstrArg<'_>]) -> Result<Self, AsmError> {
         match args {
             [] => Ok(()),
@@ -52,10 +52,10 @@ impl FromInstrArgs<'_> for () {
     }
 }
 
-impl<'a, T: FromInstrArg<'a>> FromInstrArgs<'a> for (T,) {
+impl<'a, 's, T: FromInstrArg<'a, 's>> FromInstrArgs<'a, 's> for (T,) {
     fn from_instr_args(
         instr_span: ast::Span,
-        args: &'a [ast::InstrArg<'_>],
+        args: &'a [ast::InstrArg<'s>],
     ) -> Result<Self, AsmError> {
         match args {
             [a] => Ok((T::from_instr_arg(a)?,)),
@@ -65,14 +65,14 @@ impl<'a, T: FromInstrArg<'a>> FromInstrArgs<'a> for (T,) {
     }
 }
 
-impl<'a, T1, T2> FromInstrArgs<'a> for (T1, T2)
+impl<'a, 's, T1, T2> FromInstrArgs<'a, 's> for (T1, T2)
 where
-    T1: FromInstrArg<'a>,
-    T2: FromInstrArg<'a>,
+    T1: FromInstrArg<'a, 's>,
+    T2: FromInstrArg<'a, 's>,
 {
     fn from_instr_args(
         instr_span: ast::Span,
-        args: &'a [ast::InstrArg<'_>],
+        args: &'a [ast::InstrArg<'s>],
     ) -> Result<Self, AsmError> {
         match args {
             [a1, a2] => (T1::from_instr_arg(a1), T2::from_instr_arg(a2)).join_results(),
@@ -82,15 +82,15 @@ where
     }
 }
 
-impl<'a, T1, T2, T3> FromInstrArgs<'a> for (T1, T2, T3)
+impl<'a, 's, T1, T2, T3> FromInstrArgs<'a, 's> for (T1, T2, T3)
 where
-    T1: FromInstrArg<'a>,
-    T2: FromInstrArg<'a>,
-    T3: FromInstrArg<'a>,
+    T1: FromInstrArg<'a, 's>,
+    T2: FromInstrArg<'a, 's>,
+    T3: FromInstrArg<'a, 's>,
 {
     fn from_instr_args(
         instr_span: ast::Span,
-        args: &'a [ast::InstrArg<'_>],
+        args: &'a [ast::InstrArg<'s>],
     ) -> Result<Self, AsmError> {
         match args {
             [a1, a2, a3] => (
@@ -107,16 +107,23 @@ where
     }
 }
 
-pub trait FromInstrArg<'a>: Sized {
-    fn from_instr_arg(arg: &'a ast::InstrArg<'_>) -> Result<Self, AsmError>;
+pub trait FromInstrArg<'a, 's>: Sized {
+    fn from_instr_arg(arg: &'a ast::InstrArg<'s>) -> Result<Self, AsmError>;
 }
 
-impl<'a, T1, T2> FromInstrArg<'a> for Either<T1, T2>
+impl<'a, 's> FromInstrArg<'a, 's> for &'a ast::InstrArg<'s> {
+    #[inline]
+    fn from_instr_arg(arg: &'a ast::InstrArg<'s>) -> Result<Self, AsmError> {
+        Ok(arg)
+    }
+}
+
+impl<'a, 's, T1, T2> FromInstrArg<'a, 's> for Either<T1, T2>
 where
-    T1: FromInstrArg<'a>,
-    T2: FromInstrArg<'a>,
+    T1: FromInstrArg<'a, 's>,
+    T2: FromInstrArg<'a, 's>,
 {
-    fn from_instr_arg(arg: &'a ast::InstrArg<'_>) -> Result<Self, AsmError> {
+    fn from_instr_arg(arg: &'a ast::InstrArg<'s>) -> Result<Self, AsmError> {
         match T1::from_instr_arg(arg) {
             Ok(v) => Ok(Self::Left(v)),
             Err(AsmError::ArgTypeMismatch {
@@ -142,23 +149,23 @@ where
 
 pub struct WithSpan<T>(pub T, pub ast::Span);
 
-impl<'a, T> FromInstrArg<'a> for WithSpan<T>
+impl<'a, 's, T> FromInstrArg<'a, 's> for WithSpan<T>
 where
-    T: FromInstrArg<'a>,
+    T: FromInstrArg<'a, 's>,
 {
-    fn from_instr_arg(arg: &'a ast::InstrArg<'_>) -> Result<Self, AsmError> {
+    fn from_instr_arg(arg: &'a ast::InstrArg<'s>) -> Result<Self, AsmError> {
         let span = arg.span;
         Ok(Self(T::from_instr_arg(arg)?, span))
     }
 }
 
-pub struct Nat(pub BigInt);
+pub struct Nat<'a>(pub &'a BigInt);
 
-impl<'a> FromInstrArg<'a> for Nat {
+impl<'a> FromInstrArg<'a, '_> for Nat<'a> {
     fn from_instr_arg(arg: &'a ast::InstrArg<'_>) -> Result<Self, AsmError> {
         match &arg.value {
-            ast::InstrArgValue::Nat(n) => Ok(Self(n.clone())),
-            ast::InstrArgValue::MethodId(m) => Ok(Self(BigInt::from(m.as_int()))),
+            ast::InstrArgValue::Nat(n) => Ok(Self(n)),
+            ast::InstrArgValue::MethodId(m) => Ok(Self(&m.value.computed)),
             _ => Err(AsmError::ArgTypeMismatch {
                 span: arg.span,
                 expected: ArgType::Nat.expected_exact(),
@@ -168,53 +175,42 @@ impl<'a> FromInstrArg<'a> for Nat {
     }
 }
 
-pub struct NatU2(pub u8);
+macro_rules! nat_u8 {
+    ($($bits:literal => $ident:ident),*$(,)?) => {$(
+        pub struct $ident(pub u8);
 
-impl FromInstrArg<'_> for NatU2 {
-    fn from_instr_arg(arg: &ast::InstrArg<'_>) -> Result<Self, AsmError> {
-        match &arg.value {
-            ast::InstrArgValue::Nat(n) => {
-                if let Some(n) = n.to_u8() {
-                    if n <= 0b11 {
-                        return Ok(Self(n));
+        impl FromInstrArg<'_, '_> for $ident {
+            fn from_instr_arg(arg: &ast::InstrArg<'_>) -> Result<Self, AsmError> {
+                match &arg.value {
+                    ast::InstrArgValue::Nat(n) => {
+                        if let Some(n) = n.to_u8() {
+                            if n <= const { ((1u16 << $bits) - 1) as u8 } {
+                                return Ok(Self(n));
+                            }
+                        }
+                        Err(AsmError::OutOfRange(arg.span))
                     }
+                    _ => Err(AsmError::ArgTypeMismatch {
+                        span: arg.span,
+                        expected: ArgType::Nat.expected_exact(),
+                        found: arg.value.ty(),
+                    }),
                 }
-                Err(AsmError::OutOfRange(arg.span))
             }
-            _ => Err(AsmError::ArgTypeMismatch {
-                span: arg.span,
-                expected: ArgType::Nat.expected_exact(),
-                found: arg.value.ty(),
-            }),
         }
-    }
+    )*};
 }
 
-pub struct NatU4(pub u8);
-
-impl FromInstrArg<'_> for NatU4 {
-    fn from_instr_arg(arg: &ast::InstrArg<'_>) -> Result<Self, AsmError> {
-        match &arg.value {
-            ast::InstrArgValue::Nat(n) => {
-                if let Some(n) = n.to_u8() {
-                    if n <= 0xf {
-                        return Ok(Self(n));
-                    }
-                }
-                Err(AsmError::OutOfRange(arg.span))
-            }
-            _ => Err(AsmError::ArgTypeMismatch {
-                span: arg.span,
-                expected: ArgType::Nat.expected_exact(),
-                found: arg.value.ty(),
-            }),
-        }
-    }
+nat_u8! {
+    2 => NatU2,
+    4 => NatU4,
+    5 => NatU5,
+    8 => NatU8,
 }
 
 pub struct NatU4minus<const N: u8>(pub u8);
 
-impl<const N: u8> FromInstrArg<'_> for NatU4minus<N> {
+impl<const N: u8> FromInstrArg<'_, '_> for NatU4minus<N> {
     fn from_instr_arg(arg: &'_ ast::InstrArg<'_>) -> Result<Self, AsmError> {
         match &arg.value {
             ast::InstrArgValue::Nat(n) => {
@@ -234,49 +230,9 @@ impl<const N: u8> FromInstrArg<'_> for NatU4minus<N> {
     }
 }
 
-pub struct NatU5(pub u8);
-
-impl FromInstrArg<'_> for NatU5 {
-    fn from_instr_arg(arg: &ast::InstrArg<'_>) -> Result<Self, AsmError> {
-        match &arg.value {
-            ast::InstrArgValue::Nat(n) => {
-                if let Some(n) = n.to_u8() {
-                    if n <= 0b11111 {
-                        return Ok(Self(n));
-                    }
-                }
-                Err(AsmError::OutOfRange(arg.span))
-            }
-            _ => Err(AsmError::ArgTypeMismatch {
-                span: arg.span,
-                expected: ArgType::Nat.expected_exact(),
-                found: arg.value.ty(),
-            }),
-        }
-    }
-}
-
-pub struct NatU8(pub u8);
-
-impl FromInstrArg<'_> for NatU8 {
-    fn from_instr_arg(arg: &ast::InstrArg<'_>) -> Result<Self, AsmError> {
-        match &arg.value {
-            ast::InstrArgValue::Nat(n) => match n.to_u8() {
-                Some(n) => Ok(Self(n)),
-                None => Err(AsmError::OutOfRange(arg.span)),
-            },
-            _ => Err(AsmError::ArgTypeMismatch {
-                span: arg.span,
-                expected: ArgType::Nat.expected_exact(),
-                found: arg.value.ty(),
-            }),
-        }
-    }
-}
-
 pub struct NatU8minus<const N: u16>(pub u8);
 
-impl<const N: u16> FromInstrArg<'_> for NatU8minus<N> {
+impl<const N: u16> FromInstrArg<'_, '_> for NatU8minus<N> {
     fn from_instr_arg(arg: &'_ ast::InstrArg<'_>) -> Result<Self, AsmError> {
         match &arg.value {
             ast::InstrArgValue::Nat(n) => {
@@ -298,7 +254,7 @@ impl<const N: u16> FromInstrArg<'_> for NatU8minus<N> {
 
 pub struct NatI8(pub i8);
 
-impl FromInstrArg<'_> for NatI8 {
+impl FromInstrArg<'_, '_> for NatI8 {
     fn from_instr_arg(arg: &'_ ast::InstrArg<'_>) -> Result<Self, AsmError> {
         match &arg.value {
             ast::InstrArgValue::Nat(n) => match n.to_i8() {
@@ -314,53 +270,41 @@ impl FromInstrArg<'_> for NatI8 {
     }
 }
 
-pub struct NatU11(pub u16);
+macro_rules! nat_u16 {
+    ($($bits:literal => $ident:ident),*$(,)?) => {$(
+        pub struct $ident(pub u16);
 
-impl FromInstrArg<'_> for NatU11 {
-    fn from_instr_arg(arg: &ast::InstrArg<'_>) -> Result<Self, AsmError> {
-        match &arg.value {
-            ast::InstrArgValue::Nat(n) => {
-                if let Some(n) = n.to_u16() {
-                    if n <= 0x7ff {
-                        return Ok(Self(n));
+        impl FromInstrArg<'_, '_> for $ident {
+            fn from_instr_arg(arg: &ast::InstrArg<'_>) -> Result<Self, AsmError> {
+                match &arg.value {
+                    ast::InstrArgValue::Nat(n) => {
+                        if let Some(n) = n.to_u16() {
+                            if n <= const { ((1u32 << $bits) - 1) as u16 } {
+                                return Ok(Self(n));
+                            }
+                        }
+                        Err(AsmError::OutOfRange(arg.span))
                     }
+                    _ => Err(AsmError::ArgTypeMismatch {
+                        span: arg.span,
+                        expected: ArgType::Nat.expected_exact(),
+                        found: arg.value.ty(),
+                    }),
                 }
-                Err(AsmError::OutOfRange(arg.span))
             }
-            _ => Err(AsmError::ArgTypeMismatch {
-                span: arg.span,
-                expected: ArgType::Nat.expected_exact(),
-                found: arg.value.ty(),
-            }),
         }
-    }
+    )*};
 }
 
-pub struct NatU12(pub u16);
-
-impl FromInstrArg<'_> for NatU12 {
-    fn from_instr_arg(arg: &ast::InstrArg<'_>) -> Result<Self, AsmError> {
-        match &arg.value {
-            ast::InstrArgValue::Nat(n) => {
-                if let Some(n) = n.to_u16() {
-                    if n <= 0xfff {
-                        return Ok(Self(n));
-                    }
-                }
-                Err(AsmError::OutOfRange(arg.span))
-            }
-            _ => Err(AsmError::ArgTypeMismatch {
-                span: arg.span,
-                expected: ArgType::Nat.expected_exact(),
-                found: arg.value.ty(),
-            }),
-        }
-    }
+nat_u16! {
+    10 => NatU10,
+    11 => NatU11,
+    12 => NatU12,
 }
 
 pub struct SReg(pub u8);
 
-impl FromInstrArg<'_> for SReg {
+impl FromInstrArg<'_, '_> for SReg {
     fn from_instr_arg(arg: &ast::InstrArg<'_>) -> Result<Self, AsmError> {
         match &arg.value {
             ast::InstrArgValue::SReg(n) => FullSReg(*n, arg.span).try_into(),
@@ -375,7 +319,7 @@ impl FromInstrArg<'_> for SReg {
 
 pub struct FullSReg(pub i16, pub ast::Span);
 
-impl FromInstrArg<'_> for FullSReg {
+impl FromInstrArg<'_, '_> for FullSReg {
     fn from_instr_arg(arg: &ast::InstrArg<'_>) -> Result<Self, AsmError> {
         match &arg.value {
             ast::InstrArgValue::SReg(n) => Ok(Self(*n, arg.span)),
@@ -402,7 +346,7 @@ impl TryInto<SReg> for FullSReg {
 
 pub struct CReg(pub u8);
 
-impl FromInstrArg<'_> for CReg {
+impl FromInstrArg<'_, '_> for CReg {
     fn from_instr_arg(arg: &ast::InstrArg<'_>) -> Result<Self, AsmError> {
         match &arg.value {
             ast::InstrArgValue::CReg(n) => Ok(Self(*n)),
@@ -417,7 +361,7 @@ impl FromInstrArg<'_> for CReg {
 
 pub struct Slice(pub Cell);
 
-impl FromInstrArg<'_> for Slice {
+impl FromInstrArg<'_, '_> for Slice {
     fn from_instr_arg(arg: &ast::InstrArg<'_>) -> Result<Self, AsmError> {
         match &arg.value {
             ast::InstrArgValue::Slice(cell) | ast::InstrArgValue::Cell(cell) => {
@@ -436,7 +380,7 @@ impl FromInstrArg<'_> for Slice {
 
 pub struct SliceOrCont<'a>(pub Either<Cell, (&'a [ast::Stmt<'a>], ast::Span)>);
 
-impl<'a> FromInstrArg<'a> for SliceOrCont<'a> {
+impl<'a> FromInstrArg<'a, '_> for SliceOrCont<'a> {
     fn from_instr_arg(arg: &'a ast::InstrArg<'_>) -> Result<Self, AsmError> {
         Ok(Self(match &arg.value {
             ast::InstrArgValue::Slice(cell)

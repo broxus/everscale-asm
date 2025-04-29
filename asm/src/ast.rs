@@ -62,18 +62,50 @@ pub struct MethodId<'a> {
     pub value: MethodIdValue<'a>,
 }
 
-impl MethodId<'_> {
-    pub fn as_int(&self) -> u32 {
-        let crc = crc_16(self.value.text.as_bytes());
-        crc as u32 | 0x10000
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct MethodIdValue<'a> {
     #[allow(unused)]
     pub span: Span,
+    #[allow(unused)]
     pub text: &'a str,
+    pub computed: BigInt,
+}
+
+#[derive(Debug, Clone)]
+pub struct JumpTable<'a> {
+    pub methods: Vec<JumpTableItem<'a>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct JumpTableItem<'a> {
+    pub key: JumpTableItemKey<'a>,
+    pub value: JumpTableItemValue<'a>,
+}
+
+#[derive(Debug, Clone)]
+pub struct JumpTableItemKey<'a> {
+    pub span: Span,
+    pub data: JumpTableItemKeyData<'a>,
+}
+
+#[derive(Debug, Clone)]
+pub enum JumpTableItemKeyData<'a> {
+    Nat(BigInt),
+    MethodId(MethodId<'a>),
+    Invalid,
+}
+
+#[derive(Debug, Clone)]
+pub struct JumpTableItemValue<'a> {
+    pub span: Span,
+    pub data: JumpTableItemValueData<'a>,
+}
+
+#[derive(Debug, Clone)]
+pub enum JumpTableItemValueData<'a> {
+    Block(Vec<Stmt<'a>>),
+    #[allow(unused)]
+    Invalid,
 }
 
 #[derive(Debug, Clone)]
@@ -85,11 +117,14 @@ pub enum InstrArgValue<'a> {
     Lib(Cell),
     Cell(Cell),
     Block(Vec<Stmt<'a>>),
+    JumpTable(JumpTable<'a>),
     MethodId(MethodId<'a>),
     Invalid,
 }
 
-fn parser<'a>() -> impl Parser<'a, &'a str, Code<'a>, extra::Err<ParserError>> {
+type ParserExtra = extra::Full<ParserError, (), ()>;
+
+fn parser<'a>() -> impl Parser<'a, &'a str, Code<'a>, ParserExtra> {
     stmt()
         .recover_with(skip_then_retry_until(any().ignored(), text::newline()))
         .padded()
@@ -101,7 +136,7 @@ fn parser<'a>() -> impl Parser<'a, &'a str, Code<'a>, extra::Err<ParserError>> {
         })
 }
 
-fn stmt<'a>() -> impl Parser<'a, &'a str, Stmt<'a>, extra::Err<ParserError>> {
+fn stmt<'a>() -> impl Parser<'a, &'a str, Stmt<'a>, ParserExtra> {
     recursive(|stmt| {
         let inline = just("@inline")
             .padded_by(comment().repeated())
@@ -126,8 +161,8 @@ fn stmt<'a>() -> impl Parser<'a, &'a str, Stmt<'a>, extra::Err<ParserError>> {
 }
 
 fn instr<'a>(
-    stmt: Recursive<dyn Parser<'a, &'a str, Stmt<'a>, extra::Err<ParserError>> + 'a>,
-) -> impl Parser<'a, &'a str, Instr<'a>, extra::Err<ParserError>> + Clone {
+    stmt: Recursive<dyn Parser<'a, &'a str, Stmt<'a>, ParserExtra> + 'a>,
+) -> impl Parser<'a, &'a str, Instr<'a>, ParserExtra> + Clone {
     fn compute_min_span(ident_span: Span, args: &[InstrArg<'_>]) -> Span {
         let mut res = ident_span;
         for arg in args {
@@ -165,8 +200,8 @@ fn instr<'a>(
 }
 
 fn instr_arg<'a>(
-    stmt: Recursive<dyn Parser<'a, &'a str, Stmt<'a>, extra::Err<ParserError>> + 'a>,
-) -> impl Parser<'a, &'a str, InstrArg<'a>, extra::Err<ParserError>> + Clone {
+    stmt: Recursive<dyn Parser<'a, &'a str, Stmt<'a>, ParserExtra> + 'a>,
+) -> impl Parser<'a, &'a str, InstrArg<'a>, ParserExtra> + Clone {
     choice((
         nat().map(InstrArgValue::Nat),
         just("@method")
@@ -184,6 +219,7 @@ fn instr_arg<'a>(
             idx.map(InstrArgValue::CReg)
                 .unwrap_or(InstrArgValue::Invalid)
         }),
+        jump_table(stmt.clone()).map(InstrArgValue::JumpTable),
         cont_block(stmt).map(InstrArgValue::Block),
         cell_slice().map(|slice| {
             slice
@@ -205,14 +241,14 @@ fn instr_arg<'a>(
     })
 }
 
-fn comment<'a>() -> impl Parser<'a, &'a str, (), extra::Err<ParserError>> + Clone {
+fn comment<'a>() -> impl Parser<'a, &'a str, (), ParserExtra> + Clone {
     just("//")
         .then(any().and_is(text::newline().not()).repeated())
         .padded()
         .ignored()
 }
 
-fn instr_ident<'a>() -> impl Parser<'a, &'a str, &'a str, extra::Err<ParserError>> + Clone {
+fn instr_ident<'a>() -> impl Parser<'a, &'a str, &'a str, ParserExtra> + Clone {
     any()
         .filter(|&c: &char| !c.is_whitespace() && c != ',' && c != '}' && c != '{')
         .repeated()
@@ -266,7 +302,7 @@ fn instr_ident<'a>() -> impl Parser<'a, &'a str, &'a str, extra::Err<ParserError
         })
 }
 
-fn nat<'a>() -> impl Parser<'a, &'a str, BigInt, extra::Err<ParserError>> + Clone {
+fn nat<'a>() -> impl Parser<'a, &'a str, BigInt, ParserExtra> + Clone {
     fn parse_int(mut s: &str, radix: u32, span: Span) -> Result<BigInt, ParserError> {
         if !s.is_empty() {
             s = s.trim_start_matches('0');
@@ -307,25 +343,24 @@ fn nat<'a>() -> impl Parser<'a, &'a str, BigInt, extra::Err<ParserError>> + Clon
     .then_ignore(empty().and_is(choice((
         end(),
         text::whitespace().at_least(1),
-        one_of(",{}").ignored(),
+        one_of(",{}[]").ignored(),
     ))))
 }
 
-fn stack_register<'a>() -> impl Parser<'a, &'a str, Option<i16>, extra::Err<ParserError>> + Clone {
+fn stack_register<'a>() -> impl Parser<'a, &'a str, Option<i16>, ParserExtra> + Clone {
     let until_next_arg = any()
         .filter(|&c: &char| c != ',' && !c.is_whitespace())
         .repeated();
 
     let until_eof_or_paren = none_of(")\n").repeated().then(just(')').or_not());
 
-    let idx =
-        text::int::<_, extra::Err<ParserError>>(10).try_map(|s, span| match i16::from_str(s) {
-            Ok(n) => Ok(n),
-            Err(e) => Err(ParserError::InvalidStackRegister {
-                span,
-                inner: e.into(),
-            }),
-        });
+    let idx = text::int::<_, ParserExtra>(10).try_map(|s, span| match i16::from_str(s) {
+        Ok(n) => Ok(n),
+        Err(e) => Err(ParserError::InvalidStackRegister {
+            span,
+            inner: e.into(),
+        }),
+    });
 
     just('s').ignore_then(
         choice((
@@ -342,12 +377,12 @@ fn stack_register<'a>() -> impl Parser<'a, &'a str, Option<i16>, extra::Err<Pars
     )
 }
 
-fn control_register<'a>() -> impl Parser<'a, &'a str, Option<u8>, extra::Err<ParserError>> + Clone {
+fn control_register<'a>() -> impl Parser<'a, &'a str, Option<u8>, ParserExtra> + Clone {
     let recovery = any()
         .filter(|&c: &char| c != ',' && !c.is_whitespace())
         .repeated();
 
-    let idx = text::int::<_, extra::Err<ParserError>>(10)
+    let idx = text::int::<_, ParserExtra>(10)
         .try_map(|s, span| match u8::from_str(s) {
             Ok(n) if (0..=5).contains(&n) || n == 7 => Ok(Some(n)),
             Ok(n) => Err(ParserError::InvalidControlRegister {
@@ -365,8 +400,8 @@ fn control_register<'a>() -> impl Parser<'a, &'a str, Option<u8>, extra::Err<Par
 }
 
 fn cont_block<'a>(
-    stmt: Recursive<dyn Parser<'a, &'a str, Stmt<'a>, extra::Err<ParserError>> + 'a>,
-) -> impl Parser<'a, &'a str, Vec<Stmt<'a>>, extra::Err<ParserError>> + Clone {
+    stmt: Recursive<dyn Parser<'a, &'a str, Stmt<'a>, ParserExtra> + 'a>,
+) -> impl Parser<'a, &'a str, Vec<Stmt<'a>>, ParserExtra> + Clone {
     stmt.padded().repeated().collect().delimited_by(
         just('{').padded(),
         just('}')
@@ -376,7 +411,48 @@ fn cont_block<'a>(
     )
 }
 
-fn library_cell<'a>() -> impl Parser<'a, &'a str, Option<Cell>, extra::Err<ParserError>> + Clone {
+fn jump_table<'a>(
+    stmt: Recursive<dyn Parser<'a, &'a str, Stmt<'a>, ParserExtra> + 'a>,
+) -> impl Parser<'a, &'a str, JumpTable<'a>, ParserExtra> + Clone {
+    let key = choice((
+        nat().map(JumpTableItemKeyData::Nat),
+        just("@method")
+            .rewind()
+            .ignore_then(method_id().map(|value| {
+                value
+                    .map(JumpTableItemKeyData::MethodId)
+                    .unwrap_or(JumpTableItemKeyData::Invalid)
+            })),
+    ))
+    .map_with(|data, e| JumpTableItemKey {
+        data,
+        span: e.span(),
+    });
+
+    let value = cont_block(stmt).map_with(|value, e| JumpTableItemValue {
+        span: e.span(),
+        data: JumpTableItemValueData::Block(value),
+    });
+
+    let item = key
+        .then_ignore(just("=>").padded())
+        .then(value)
+        .map(|(key, value)| JumpTableItem { key, value });
+
+    item.padded()
+        .repeated()
+        .collect()
+        .delimited_by(
+            just('[').padded(),
+            just(']')
+                .ignored()
+                .recover_with(via_parser(end()))
+                .recover_with(skip_then_retry_until(any().ignored(), end())),
+        )
+        .map_with(|methods: Vec<JumpTableItem<'_>>, _e| JumpTable { methods })
+}
+
+fn library_cell<'a>() -> impl Parser<'a, &'a str, Option<Cell>, ParserExtra> + Clone {
     let content_recovery = any()
         .filter(|&c: &char| c != '}' && !c.is_whitespace())
         .repeated();
@@ -411,7 +487,7 @@ fn library_cell<'a>() -> impl Parser<'a, &'a str, Option<Cell>, extra::Err<Parse
         })
 }
 
-fn raw_cell<'a>() -> impl Parser<'a, &'a str, Option<Cell>, extra::Err<ParserError>> + Clone {
+fn raw_cell<'a>() -> impl Parser<'a, &'a str, Option<Cell>, ParserExtra> + Clone {
     let content_recovery = any()
         .filter(|&c: &char| c != '}' && !c.is_whitespace())
         .repeated();
@@ -432,8 +508,7 @@ fn raw_cell<'a>() -> impl Parser<'a, &'a str, Option<Cell>, extra::Err<ParserErr
     )
 }
 
-fn method_id<'a>() -> impl Parser<'a, &'a str, Option<MethodId<'a>>, extra::Err<ParserError>> + Clone
-{
+fn method_id<'a>() -> impl Parser<'a, &'a str, Option<MethodId<'a>>, ParserExtra> + Clone {
     let until_next_arg_or_eof = any()
         .filter(|&c: &char| c != '}' && c != ')' && c != ',' && !c.is_whitespace())
         .repeated();
@@ -444,7 +519,14 @@ fn method_id<'a>() -> impl Parser<'a, &'a str, Option<MethodId<'a>>, extra::Err<
                 .repeated()
                 .to_slice()
                 .try_map(move |s, mut span| match parse_method_name(s, &mut span) {
-                    Ok(text) => Ok(Some(MethodIdValue { span, text })),
+                    Ok(text) => Ok(Some(MethodIdValue {
+                        span,
+                        text,
+                        computed: {
+                            let crc = crc_16(text.as_bytes());
+                            BigInt::from(crc as u32 | 0x10000)
+                        },
+                    })),
                     Err(e) => Err(ParserError::InvalidMethodId {
                         span,
                         inner: e.into(),
@@ -462,7 +544,7 @@ fn method_id<'a>() -> impl Parser<'a, &'a str, Option<MethodId<'a>>, extra::Err<
         .recover_with(via_parser(until_next_arg_or_eof.map(|_| None)))
 }
 
-fn cell_slice<'a>() -> impl Parser<'a, &'a str, Option<Cell>, extra::Err<ParserError>> + Clone {
+fn cell_slice<'a>() -> impl Parser<'a, &'a str, Option<Cell>, ParserExtra> + Clone {
     let content_recovery = any()
         .filter(|&c: &char| c != '}' && !c.is_whitespace())
         .repeated();

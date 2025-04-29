@@ -14,7 +14,7 @@
   ],
   "autoCloseBefore": ";:.,=}])>` \n\t",
   "indentationRules": {
-    "increaseIndentPattern": "^((?!.*?\\/\\*).*\\*/)?\\s*[\\}\\]].*$",
-    "decreaseIndentPattern": "^((?!\\/\\/).)*(\\{[^}\"'`]*|\\([^)\"'`]*|\\[[^\\]\"'`]*)$"
+    "increaseIndentPattern": "[{\\[\\(]\\s*$",
+    "decreaseIndentPattern": "^[^ ]$"
   }
 }

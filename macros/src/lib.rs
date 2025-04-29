@@ -6,8 +6,7 @@ use std::path::Path;
 use everscale_asm::Code;
 use everscale_types::boc::Boc;
 use proc_macro::TokenStream;
-use quote::quote;
-use quote::ToTokens;
+use quote::{quote, ToTokens};
 use syn::punctuated::Punctuated;
 
 #[proc_macro]

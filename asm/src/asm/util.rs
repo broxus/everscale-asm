@@ -3,48 +3,62 @@ use everscale_types::prelude::*;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 
+use super::{ArgType, JoinResults, Scope};
 use crate::asm::AsmError;
 use crate::ast;
 
-use super::{ArgType, JoinResults};
-
 pub trait ParseArgs<'s> {
-    fn parse_args<'a, T: FromInstrArgs<'a, 's>>(&'a self) -> Result<T, AsmError>;
+    fn parse_args<'i: 'c, 'c, T: FromInstrArgs<'c, 's>>(
+        &'i self,
+        scope: &'c Scope<'_, 's>,
+    ) -> Result<T, AsmError>;
 }
 
 impl<'s> ParseArgs<'s> for ast::Instr<'s> {
     #[inline]
-    fn parse_args<'a, T: FromInstrArgs<'a, 's>>(&'a self) -> Result<T, AsmError> {
-        T::from_instr_args(self.ident_span, &self.args)
+    fn parse_args<'i: 'c, 'c, T: FromInstrArgs<'c, 's>>(
+        &'i self,
+        scope: &'c Scope<'_, 's>,
+    ) -> Result<T, AsmError> {
+        T::from_instr_args(self.ident_span, &self.args, scope)
     }
 }
 
 impl<'s> ParseArgs<'s> for ast::Inline<'s> {
     #[inline]
-    fn parse_args<'a, T: FromInstrArgs<'a, 's>>(&'a self) -> Result<T, AsmError> {
-        T::from_instr_args(self.span, std::slice::from_ref(&self.value))
+    fn parse_args<'i: 'c, 'c, T: FromInstrArgs<'c, 's>>(
+        &'i self,
+        scope: &'c Scope<'_, 's>,
+    ) -> Result<T, AsmError> {
+        T::from_instr_args(self.span, std::slice::from_ref(&self.value), scope)
     }
 }
 
-pub trait FromInstrArgs<'a, 's>: Sized {
-    fn from_instr_args(
+pub trait FromInstrArgs<'c, 's>: Sized {
+    fn from_instr_args<'i: 'c>(
         instr_span: ast::Span,
-        args: &'a [ast::InstrArg<'s>],
+        args: &'i [ast::InstrArg<'s>],
+        scope: &'c Scope<'_, 's>,
     ) -> Result<Self, AsmError>;
 }
 
-impl<'a, 's, T: FromInstrArg<'a, 's>> FromInstrArgs<'a, 's> for T {
-    fn from_instr_args(
+impl<'c, 's, T: FromInstrArg<'c, 's>> FromInstrArgs<'c, 's> for T {
+    fn from_instr_args<'i: 'c>(
         instr_span: ast::Span,
-        args: &'a [ast::InstrArg<'s>],
+        args: &'i [ast::InstrArg<'s>],
+        scope: &'c Scope<'_, 's>,
     ) -> Result<Self, AsmError> {
-        let (s,) = <_>::from_instr_args(instr_span, args)?;
+        let (s,) = <_>::from_instr_args(instr_span, args, scope)?;
         Ok(s)
     }
 }
 
-impl FromInstrArgs<'_, '_> for () {
-    fn from_instr_args(_: ast::Span, args: &[ast::InstrArg<'_>]) -> Result<Self, AsmError> {
+impl<'c, 's> FromInstrArgs<'c, 's> for () {
+    fn from_instr_args<'i: 'c>(
+        _: ast::Span,
+        args: &'i [ast::InstrArg<'s>],
+        _: &'c Scope<'_, 's>,
+    ) -> Result<Self, AsmError> {
         match args {
             [] => Ok(()),
             [first, rest @ ..] => Err(AsmError::TooManyArgs(compute_args_span(first, rest))),
@@ -52,51 +66,56 @@ impl FromInstrArgs<'_, '_> for () {
     }
 }
 
-impl<'a, 's, T: FromInstrArg<'a, 's>> FromInstrArgs<'a, 's> for (T,) {
-    fn from_instr_args(
+impl<'c, 's, T: FromInstrArg<'c, 's>> FromInstrArgs<'c, 's> for (T,) {
+    fn from_instr_args<'i: 'c>(
         instr_span: ast::Span,
-        args: &'a [ast::InstrArg<'s>],
+        args: &'i [ast::InstrArg<'s>],
+        scope: &'c Scope<'_, 's>,
     ) -> Result<Self, AsmError> {
         match args {
-            [a] => Ok((T::from_instr_arg(a)?,)),
+            [a] => Ok((T::from_instr_arg(a, scope)?,)),
             [_, first, rest @ ..] => Err(AsmError::TooManyArgs(compute_args_span(first, rest))),
             _ => Err(AsmError::NotEnoughArgs(instr_span)),
         }
     }
 }
 
-impl<'a, 's, T1, T2> FromInstrArgs<'a, 's> for (T1, T2)
+impl<'c, 's, T1, T2> FromInstrArgs<'c, 's> for (T1, T2)
 where
-    T1: FromInstrArg<'a, 's>,
-    T2: FromInstrArg<'a, 's>,
+    T1: FromInstrArg<'c, 's>,
+    T2: FromInstrArg<'c, 's>,
 {
-    fn from_instr_args(
+    fn from_instr_args<'i: 'c>(
         instr_span: ast::Span,
-        args: &'a [ast::InstrArg<'s>],
+        args: &'i [ast::InstrArg<'s>],
+        scope: &'c Scope<'_, 's>,
     ) -> Result<Self, AsmError> {
         match args {
-            [a1, a2] => (T1::from_instr_arg(a1), T2::from_instr_arg(a2)).join_results(),
+            [a1, a2] => {
+                (T1::from_instr_arg(a1, scope), T2::from_instr_arg(a2, scope)).join_results()
+            }
             [_, _, first, rest @ ..] => Err(AsmError::TooManyArgs(compute_args_span(first, rest))),
             _ => Err(AsmError::NotEnoughArgs(instr_span)),
         }
     }
 }
 
-impl<'a, 's, T1, T2, T3> FromInstrArgs<'a, 's> for (T1, T2, T3)
+impl<'c, 's, T1, T2, T3> FromInstrArgs<'c, 's> for (T1, T2, T3)
 where
-    T1: FromInstrArg<'a, 's>,
-    T2: FromInstrArg<'a, 's>,
-    T3: FromInstrArg<'a, 's>,
+    T1: FromInstrArg<'c, 's>,
+    T2: FromInstrArg<'c, 's>,
+    T3: FromInstrArg<'c, 's>,
 {
-    fn from_instr_args(
+    fn from_instr_args<'i: 'c>(
         instr_span: ast::Span,
-        args: &'a [ast::InstrArg<'s>],
+        args: &'i [ast::InstrArg<'s>],
+        scope: &'c Scope<'_, 's>,
     ) -> Result<Self, AsmError> {
         match args {
             [a1, a2, a3] => (
-                T1::from_instr_arg(a1),
-                T2::from_instr_arg(a2),
-                T3::from_instr_arg(a3),
+                T1::from_instr_arg(a1, scope),
+                T2::from_instr_arg(a2, scope),
+                T3::from_instr_arg(a3, scope),
             )
                 .join_results(),
             [_, _, _, first, rest @ ..] => {
@@ -107,31 +126,40 @@ where
     }
 }
 
-pub trait FromInstrArg<'a, 's>: Sized {
-    fn from_instr_arg(arg: &'a ast::InstrArg<'s>) -> Result<Self, AsmError>;
+pub trait FromInstrArg<'c, 's>: Sized {
+    fn from_instr_arg<'i: 'c>(
+        arg: &'i ast::InstrArg<'s>,
+        scope: &'c Scope<'_, 's>,
+    ) -> Result<Self, AsmError>;
 }
 
-impl<'a, 's> FromInstrArg<'a, 's> for &'a ast::InstrArg<'s> {
+impl<'c, 's> FromInstrArg<'c, 's> for &'c ast::InstrArg<'s> {
     #[inline]
-    fn from_instr_arg(arg: &'a ast::InstrArg<'s>) -> Result<Self, AsmError> {
-        Ok(arg)
+    fn from_instr_arg<'i: 'c>(
+        arg: &'i ast::InstrArg<'s>,
+        scope: &'c Scope<'_, 's>,
+    ) -> Result<Self, AsmError> {
+        scope.resolve_arg_once(arg)
     }
 }
 
-impl<'a, 's, T1, T2> FromInstrArg<'a, 's> for Either<T1, T2>
+impl<'c, 's, T1, T2> FromInstrArg<'c, 's> for Either<T1, T2>
 where
-    T1: FromInstrArg<'a, 's>,
-    T2: FromInstrArg<'a, 's>,
+    T1: FromInstrArg<'c, 's>,
+    T2: FromInstrArg<'c, 's>,
 {
-    fn from_instr_arg(arg: &'a ast::InstrArg<'s>) -> Result<Self, AsmError> {
-        match T1::from_instr_arg(arg) {
-            Ok(v) => Ok(Self::Left(v)),
+    fn from_instr_arg<'i: 'c>(
+        arg: &'i ast::InstrArg<'s>,
+        scope: &'c Scope<'_, 's>,
+    ) -> Result<Self, AsmError> {
+        match T1::from_instr_arg(arg, scope) {
+            Ok(v) => Ok(Either::Left(v)),
             Err(AsmError::ArgTypeMismatch {
                 span,
                 expected: expected_a,
                 found,
-            }) => match T2::from_instr_arg(arg) {
-                Ok(v) => Ok(Self::Right(v)),
+            }) => match T2::from_instr_arg(arg, scope) {
+                Ok(v) => Ok(Either::Right(v)),
                 Err(AsmError::ArgTypeMismatch {
                     expected: expected_b,
                     ..
@@ -149,20 +177,27 @@ where
 
 pub struct WithSpan<T>(pub T, pub ast::Span);
 
-impl<'a, 's, T> FromInstrArg<'a, 's> for WithSpan<T>
+impl<'c, 's, T> FromInstrArg<'c, 's> for WithSpan<T>
 where
-    T: FromInstrArg<'a, 's>,
+    T: FromInstrArg<'c, 's>,
 {
-    fn from_instr_arg(arg: &'a ast::InstrArg<'s>) -> Result<Self, AsmError> {
+    fn from_instr_arg<'i: 'c>(
+        arg: &'i ast::InstrArg<'s>,
+        scope: &'c Scope<'_, 's>,
+    ) -> Result<Self, AsmError> {
         let span = arg.span;
-        Ok(Self(T::from_instr_arg(arg)?, span))
+        Ok(WithSpan(T::from_instr_arg(arg, scope)?, span))
     }
 }
 
 pub struct Nat<'a>(pub &'a BigInt);
 
-impl<'a> FromInstrArg<'a, '_> for Nat<'a> {
-    fn from_instr_arg(arg: &'a ast::InstrArg<'_>) -> Result<Self, AsmError> {
+impl<'c, 's> FromInstrArg<'c, 's> for Nat<'c> {
+    fn from_instr_arg<'i: 'c>(
+        arg: &'i ast::InstrArg<'s>,
+        scope: &'c Scope<'_, 's>,
+    ) -> Result<Self, AsmError> {
+        let arg = scope.resolve_arg_once(arg)?;
         match &arg.value {
             ast::InstrArgValue::Nat(n) => Ok(Self(n)),
             ast::InstrArgValue::MethodId(m) => Ok(Self(&m.value.computed)),
@@ -179,8 +214,12 @@ macro_rules! nat_u8 {
     ($($bits:literal => $ident:ident),*$(,)?) => {$(
         pub struct $ident(pub u8);
 
-        impl FromInstrArg<'_, '_> for $ident {
-            fn from_instr_arg(arg: &ast::InstrArg<'_>) -> Result<Self, AsmError> {
+        impl<'c, 's> FromInstrArg<'c, 's> for $ident {
+            fn from_instr_arg<'i: 'c>(
+                arg: &'i ast::InstrArg<'s>,
+                scope: &'c Scope<'_, 's>,
+            ) -> Result<Self, AsmError> {
+                let arg = scope.resolve_arg_once(arg)?;
                 match &arg.value {
                     ast::InstrArgValue::Nat(n) => {
                         if let Some(n) = n.to_u8() {
@@ -210,8 +249,12 @@ nat_u8! {
 
 pub struct NatU4minus<const N: u8>(pub u8);
 
-impl<const N: u8> FromInstrArg<'_, '_> for NatU4minus<N> {
-    fn from_instr_arg(arg: &'_ ast::InstrArg<'_>) -> Result<Self, AsmError> {
+impl<'c, 's, const N: u8> FromInstrArg<'c, 's> for NatU4minus<N> {
+    fn from_instr_arg<'i: 'c>(
+        arg: &'i ast::InstrArg<'s>,
+        scope: &'c Scope<'_, 's>,
+    ) -> Result<Self, AsmError> {
+        let arg = scope.resolve_arg_once(arg)?;
         match &arg.value {
             ast::InstrArgValue::Nat(n) => {
                 if let Some(n) = n.to_u8() {
@@ -232,8 +275,12 @@ impl<const N: u8> FromInstrArg<'_, '_> for NatU4minus<N> {
 
 pub struct NatU8minus<const N: u16>(pub u8);
 
-impl<const N: u16> FromInstrArg<'_, '_> for NatU8minus<N> {
-    fn from_instr_arg(arg: &'_ ast::InstrArg<'_>) -> Result<Self, AsmError> {
+impl<'c, 's, const N: u16> FromInstrArg<'c, 's> for NatU8minus<N> {
+    fn from_instr_arg<'i: 'c>(
+        arg: &'i ast::InstrArg<'s>,
+        scope: &'c Scope<'_, 's>,
+    ) -> Result<Self, AsmError> {
+        let arg = scope.resolve_arg_once(arg)?;
         match &arg.value {
             ast::InstrArgValue::Nat(n) => {
                 if let Some(n) = n.to_u16() {
@@ -254,8 +301,12 @@ impl<const N: u16> FromInstrArg<'_, '_> for NatU8minus<N> {
 
 pub struct NatI8(pub i8);
 
-impl FromInstrArg<'_, '_> for NatI8 {
-    fn from_instr_arg(arg: &'_ ast::InstrArg<'_>) -> Result<Self, AsmError> {
+impl<'c, 's> FromInstrArg<'c, 's> for NatI8 {
+    fn from_instr_arg<'i: 'c>(
+        arg: &'i ast::InstrArg<'s>,
+        scope: &'c Scope<'_, 's>,
+    ) -> Result<Self, AsmError> {
+        let arg = scope.resolve_arg_once(arg)?;
         match &arg.value {
             ast::InstrArgValue::Nat(n) => match n.to_i8() {
                 Some(n) => Ok(Self(n)),
@@ -274,8 +325,12 @@ macro_rules! nat_u16 {
     ($($bits:literal => $ident:ident),*$(,)?) => {$(
         pub struct $ident(pub u16);
 
-        impl FromInstrArg<'_, '_> for $ident {
-            fn from_instr_arg(arg: &ast::InstrArg<'_>) -> Result<Self, AsmError> {
+        impl<'c, 's> FromInstrArg<'c, 's> for $ident {
+            fn from_instr_arg<'i: 'c>(
+                arg: &'i ast::InstrArg<'s>,
+                scope: &'c Scope<'_, 's>,
+            ) -> Result<Self, AsmError> {
+                let arg = scope.resolve_arg_once(arg)?;
                 match &arg.value {
                     ast::InstrArgValue::Nat(n) => {
                         if let Some(n) = n.to_u16() {
@@ -304,8 +359,12 @@ nat_u16! {
 
 pub struct SReg(pub u8);
 
-impl FromInstrArg<'_, '_> for SReg {
-    fn from_instr_arg(arg: &ast::InstrArg<'_>) -> Result<Self, AsmError> {
+impl<'c, 's> FromInstrArg<'c, 's> for SReg {
+    fn from_instr_arg<'i: 'c>(
+        arg: &'i ast::InstrArg<'s>,
+        scope: &'c Scope<'_, 's>,
+    ) -> Result<Self, AsmError> {
+        let arg = scope.resolve_arg_once(arg)?;
         match &arg.value {
             ast::InstrArgValue::SReg(n) => FullSReg(*n, arg.span).try_into(),
             _ => Err(AsmError::ArgTypeMismatch {
@@ -319,8 +378,12 @@ impl FromInstrArg<'_, '_> for SReg {
 
 pub struct FullSReg(pub i16, pub ast::Span);
 
-impl FromInstrArg<'_, '_> for FullSReg {
-    fn from_instr_arg(arg: &ast::InstrArg<'_>) -> Result<Self, AsmError> {
+impl<'c, 's> FromInstrArg<'c, 's> for FullSReg {
+    fn from_instr_arg<'i: 'c>(
+        arg: &'i ast::InstrArg<'s>,
+        scope: &'c Scope<'_, 's>,
+    ) -> Result<Self, AsmError> {
+        let arg = scope.resolve_arg_once(arg)?;
         match &arg.value {
             ast::InstrArgValue::SReg(n) => Ok(Self(*n, arg.span)),
             _ => Err(AsmError::ArgTypeMismatch {
@@ -346,8 +409,12 @@ impl TryInto<SReg> for FullSReg {
 
 pub struct CReg(pub u8);
 
-impl FromInstrArg<'_, '_> for CReg {
-    fn from_instr_arg(arg: &ast::InstrArg<'_>) -> Result<Self, AsmError> {
+impl<'c, 's> FromInstrArg<'c, 's> for CReg {
+    fn from_instr_arg<'i: 'c>(
+        arg: &'i ast::InstrArg<'s>,
+        scope: &'c Scope<'_, 's>,
+    ) -> Result<Self, AsmError> {
+        let arg = scope.resolve_arg_once(arg)?;
         match &arg.value {
             ast::InstrArgValue::CReg(n) => Ok(Self(*n)),
             _ => Err(AsmError::ArgTypeMismatch {
@@ -361,8 +428,12 @@ impl FromInstrArg<'_, '_> for CReg {
 
 pub struct Slice(pub Cell);
 
-impl FromInstrArg<'_, '_> for Slice {
-    fn from_instr_arg(arg: &ast::InstrArg<'_>) -> Result<Self, AsmError> {
+impl<'c, 's> FromInstrArg<'c, 's> for Slice {
+    fn from_instr_arg<'i: 'c>(
+        arg: &'i ast::InstrArg<'s>,
+        scope: &'c Scope<'_, 's>,
+    ) -> Result<Self, AsmError> {
+        let arg = scope.resolve_arg_once(arg)?;
         match &arg.value {
             ast::InstrArgValue::Slice(cell) | ast::InstrArgValue::Cell(cell) => {
                 Ok(Self(cell.clone()))
@@ -378,10 +449,14 @@ impl FromInstrArg<'_, '_> for Slice {
     }
 }
 
-pub struct SliceOrCont<'a>(pub Either<Cell, (&'a [ast::Stmt<'a>], ast::Span)>);
+pub struct SliceOrCont<'c, 's>(pub Either<Cell, (&'c [ast::Stmt<'s>], ast::Span)>);
 
-impl<'a> FromInstrArg<'a, '_> for SliceOrCont<'a> {
-    fn from_instr_arg(arg: &'a ast::InstrArg<'_>) -> Result<Self, AsmError> {
+impl<'c, 's> FromInstrArg<'c, 's> for SliceOrCont<'c, 's> {
+    fn from_instr_arg<'i: 'c>(
+        arg: &'i ast::InstrArg<'s>,
+        scope: &'c Scope<'_, 's>,
+    ) -> Result<Self, AsmError> {
+        let arg = scope.resolve_arg_once(arg)?;
         Ok(Self(match &arg.value {
             ast::InstrArgValue::Slice(cell)
             | ast::InstrArgValue::Lib(cell)

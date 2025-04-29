@@ -70,7 +70,7 @@
         },
         {
           "name": "keyword.other.tvm",
-          "begin": "@method\\(",
+          "begin": "(@method|@define|@use)\\(",
           "end": "\\)",
           "patterns": [
             {

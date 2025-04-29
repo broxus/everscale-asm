@@ -1,8 +1,9 @@
 use std::str::FromStr;
 
+use chumsky::prelude::*;
 use chumsky::text::TextExpected;
 use chumsky::util::MaybeRef;
-use chumsky::{prelude::*, DefaultExpected};
+use chumsky::DefaultExpected;
 use everscale_types::boc::Boc;
 use everscale_types::cell::{CellType, HashBytes};
 use everscale_types::crc::crc_16;
@@ -27,6 +28,8 @@ pub enum Stmt<'a> {
     Instr(Instr<'a>),
     Inline(Inline<'a>),
     NewCell(#[allow(unused)] NewCell),
+    Define(Define<'a>),
+    Invalid(Span),
 }
 
 #[derive(Debug, Clone)]
@@ -41,6 +44,20 @@ pub struct Instr<'a> {
 pub struct Inline<'a> {
     pub span: Span,
     pub value: InstrArg<'a>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Define<'a> {
+    #[allow(unused)]
+    pub span: Span,
+    pub name: DefineName<'a>,
+    pub value: InstrArg<'a>,
+}
+
+#[derive(Debug, Clone)]
+pub struct DefineName<'a> {
+    pub span: Span,
+    pub name: &'a str,
 }
 
 #[derive(Debug, Clone)]
@@ -72,6 +89,19 @@ pub struct MethodIdValue<'a> {
 }
 
 #[derive(Debug, Clone)]
+pub struct Use<'a> {
+    pub span: Span,
+    pub value: UseValue<'a>,
+}
+
+#[derive(Debug, Clone)]
+pub struct UseValue<'a> {
+    #[allow(unused)]
+    pub span: Span,
+    pub name: &'a str,
+}
+
+#[derive(Debug, Clone)]
 pub struct JumpTable<'a> {
     pub methods: Vec<JumpTableItem<'a>>,
 }
@@ -92,6 +122,7 @@ pub struct JumpTableItemKey<'a> {
 pub enum JumpTableItemKeyData<'a> {
     Nat(BigInt),
     MethodId(MethodId<'a>),
+    Use(Use<'a>),
     Invalid,
 }
 
@@ -119,6 +150,7 @@ pub enum InstrArgValue<'a> {
     Block(Vec<Stmt<'a>>),
     JumpTable(JumpTable<'a>),
     MethodId(MethodId<'a>),
+    Use(Use<'a>),
     Invalid,
 }
 
@@ -154,10 +186,49 @@ fn stmt<'a>() -> impl Parser<'a, &'a str, Stmt<'a>, ParserExtra> {
             .padded()
             .map_with(|_, e| Stmt::NewCell(NewCell { span: e.span() }));
 
+        let define = define(stmt.clone()).map_with(|define, e| match define {
+            Some(value) => Stmt::Define(value),
+            None => Stmt::Invalid(e.span()),
+        });
+
         let instr = instr(stmt).map(Stmt::Instr);
 
-        choice((inline, jumpref, instr))
+        choice((inline, define, jumpref, instr))
     })
+}
+
+fn define<'a>(
+    stmt: Recursive<dyn Parser<'a, &'a str, Stmt<'a>, ParserExtra> + 'a>,
+) -> impl Parser<'a, &'a str, Option<Define<'a>>, ParserExtra> + Clone {
+    let until_next_arg_or_eof = any()
+        .filter(|&c: &char| c != '}' && c != ')' && c != ',' && !c.is_whitespace())
+        .repeated();
+
+    just("@define(")
+        .ignore_then(
+            none_of(")")
+                .repeated()
+                .to_slice()
+                .try_map(move |s, mut span| match parse_ident_name(s, &mut span) {
+                    Ok(name) => Ok(Some(DefineName { span, name })),
+                    Err(e) => Err(ParserError::InvalidName {
+                        span,
+                        inner: e.into(),
+                    }),
+                })
+                .recover_with(via_parser(until_next_arg_or_eof.map(|_| None))),
+        )
+        .then_ignore(just(')').padded())
+        .padded_by(comment().repeated())
+        .padded()
+        .then(instr_arg(stmt.clone()))
+        .map_with(|(name, value), e| {
+            name.map(|name| Define {
+                span: e.span(),
+                name,
+                value,
+            })
+        })
 }
 
 fn instr<'a>(
@@ -211,6 +282,11 @@ fn instr_arg<'a>(
                     .map(InstrArgValue::MethodId)
                     .unwrap_or(InstrArgValue::Invalid)
             })),
+        just("@use").rewind().ignore_then(r#use().map(|value| {
+            value
+                .map(InstrArgValue::Use)
+                .unwrap_or(InstrArgValue::Invalid)
+        })),
         stack_register().map(|idx| {
             idx.map(InstrArgValue::SReg)
                 .unwrap_or(InstrArgValue::Invalid)
@@ -423,6 +499,11 @@ fn jump_table<'a>(
                     .map(JumpTableItemKeyData::MethodId)
                     .unwrap_or(JumpTableItemKeyData::Invalid)
             })),
+        just("@use").rewind().ignore_then(r#use().map(|value| {
+            value
+                .map(JumpTableItemKeyData::Use)
+                .unwrap_or(JumpTableItemKeyData::Invalid)
+        })),
     ))
     .map_with(|data, e| JumpTableItemKey {
         data,
@@ -518,7 +599,7 @@ fn method_id<'a>() -> impl Parser<'a, &'a str, Option<MethodId<'a>>, ParserExtra
             none_of(")")
                 .repeated()
                 .to_slice()
-                .try_map(move |s, mut span| match parse_method_name(s, &mut span) {
+                .try_map(move |s, mut span| match parse_ident_name(s, &mut span) {
                     Ok(text) => Ok(Some(MethodIdValue {
                         span,
                         text,
@@ -537,6 +618,35 @@ fn method_id<'a>() -> impl Parser<'a, &'a str, Option<MethodId<'a>>, ParserExtra
         .then_ignore(just(')'))
         .map_with(|value, e| {
             value.map(|value| MethodId {
+                span: e.span(),
+                value,
+            })
+        })
+        .recover_with(via_parser(until_next_arg_or_eof.map(|_| None)))
+}
+
+fn r#use<'a>() -> impl Parser<'a, &'a str, Option<Use<'a>>, ParserExtra> + Clone {
+    let until_next_arg_or_eof = any()
+        .filter(|&c: &char| c != '}' && c != ')' && c != ',' && !c.is_whitespace())
+        .repeated();
+
+    just("@use(")
+        .ignore_then(
+            none_of(")")
+                .repeated()
+                .to_slice()
+                .try_map(move |s, mut span| match parse_ident_name(s, &mut span) {
+                    Ok(name) => Ok(Some(UseValue { span, name })),
+                    Err(e) => Err(ParserError::InvalidMethodId {
+                        span,
+                        inner: e.into(),
+                    }),
+                })
+                .recover_with(via_parser(until_next_arg_or_eof.map(|_| None))),
+        )
+        .then_ignore(just(')'))
+        .map_with(|value, e| {
+            value.map(|value| Use {
                 span: e.span(),
                 value,
             })
@@ -683,7 +793,7 @@ fn parse_library_ref(s: &str) -> Result<Cell, LibraryError> {
     b.build().map_err(LibraryError::CellError)
 }
 
-fn parse_method_name<'a>(mut s: &'a str, span: &mut Span) -> Result<&'a str, MethodIdError> {
+fn parse_ident_name<'a>(mut s: &'a str, span: &mut Span) -> Result<&'a str, NameError> {
     // Shift span start by the trimmed prefix.
     let mut original = s;
     s = s.trim_start();
@@ -697,14 +807,14 @@ fn parse_method_name<'a>(mut s: &'a str, span: &mut Span) -> Result<&'a str, Met
     // Validate method name.
     let mut chars = s.chars();
     let Some(first) = chars.next() else {
-        return Err(MethodIdError::Empty);
+        return Err(NameError::Empty);
     };
     if !first.is_ascii_alphabetic() {
-        return Err(MethodIdError::InvalidPrefix);
+        return Err(NameError::InvalidPrefix);
     }
     for c in chars {
         if !c.is_ascii_alphanumeric() && c != '_' {
-            return Err(MethodIdError::UnexpectedChar(c));
+            return Err(NameError::UnexpectedChar(c));
         }
     }
     Ok(s)
@@ -731,6 +841,8 @@ pub enum ParserError {
     InvalidLibrary { span: Span, inner: anyhow::Error },
     #[error("invalid method id: {inner}")]
     InvalidMethodId { span: Span, inner: anyhow::Error },
+    #[error("invalid name: {inner}")]
+    InvalidName { span: Span, inner: anyhow::Error },
     #[error("unknown error")]
     UnknownError,
 }
@@ -745,7 +857,8 @@ impl ParserError {
             | Self::InvalidSlice { span, .. }
             | Self::InvalidCell { span, .. }
             | Self::InvalidLibrary { span, .. }
-            | Self::InvalidMethodId { span, .. } => Some(*span),
+            | Self::InvalidMethodId { span, .. }
+            | Self::InvalidName { span, .. } => Some(*span),
             Self::UnknownError => None,
         }
     }
@@ -778,12 +891,12 @@ enum SliceError {
 struct CellError(#[from] everscale_types::boc::de::Error);
 
 #[derive(thiserror::Error, Debug)]
-pub enum MethodIdError {
-    #[error("method name cannot be empty")]
+pub enum NameError {
+    #[error("name cannot be empty")]
     Empty,
-    #[error("method name must start with a letter")]
+    #[error("name must start with a letter")]
     InvalidPrefix,
-    #[error("unexpected char `{0}` in method name")]
+    #[error("unexpected char `{0}` in a name")]
     UnexpectedChar(char),
 }
 

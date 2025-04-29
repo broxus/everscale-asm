@@ -45,3 +45,23 @@ DICTPUSHCONST 19, [
 PUSHREF @{0000000000000000000000000000000000000000000000000000000000000000}
 
 PUSHREF te6ccgEBAQEAAgAAAA==
+
+
+@define(simpleProg) {
+  SETCP 0
+  DICTPUSHCONST 19, [
+      0 => {
+          DUP
+          CALLDICT 22
+          INC
+      }
+      22 => {
+          MUL
+      }
+  ]
+  DICTIGETJMPZ
+  THROWARG 11
+}
+
+INT 10 INT 0 INT 2 SLICE @use(simpleProg) RUNVM 1
+INT 10 INT 0 INT 2 SLICE @use(simpleProg) RUNVM 0

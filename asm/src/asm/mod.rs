@@ -4,15 +4,16 @@ mod util;
 use chumsky::span::Span;
 use everscale_types::prelude::*;
 
-use self::opcodes::{cp0, Context};
+use self::opcodes::{cp0, Context, Scope};
 use crate::ast;
 
 pub fn assemble(ast: &[ast::Stmt], span: ast::Span) -> Result<Cell, AsmError> {
     let opcodes = cp0();
 
     let mut context = Context::new();
+    let mut scope = Scope::new();
     for stmt in ast {
-        context.add_stmt(opcodes, stmt)?;
+        context.add_stmt(opcodes, stmt, &mut scope)?;
     }
 
     context
@@ -26,9 +27,10 @@ pub fn check(ast: &[ast::Stmt], span: ast::Span) -> Vec<AsmError> {
 
     let mut errors = Vec::new();
     let mut context = Context::new();
+    let mut scope = Scope::new();
     context.set_allow_invalid();
     for stmt in ast {
-        if let Err(e) = context.add_stmt(opcodes, stmt) {
+        if let Err(e) = context.add_stmt(opcodes, stmt, &mut scope) {
             errors.push(e);
         }
     }
@@ -55,6 +57,7 @@ impl ast::InstrArgValue<'_> {
             ast::InstrArgValue::Cell(_) => ArgType::Cell,
             ast::InstrArgValue::Block(_) => ArgType::Block,
             ast::InstrArgValue::JumpTable(_) => ArgType::JumpTable,
+            ast::InstrArgValue::Use(_) => ArgType::Undefined,
             ast::InstrArgValue::Invalid => ArgType::Invalid,
         }
     }
@@ -71,6 +74,7 @@ pub enum ArgType {
     Cell,
     Block,
     JumpTable,
+    Undefined,
     Invalid,
 }
 
@@ -96,6 +100,7 @@ impl std::fmt::Display for ArgType {
             Self::Library => "library hash",
             Self::Block => "instruction block",
             Self::JumpTable => "jump table",
+            Self::Undefined => "undefined",
             Self::Invalid => "invalid",
         })
     }
@@ -157,6 +162,12 @@ impl std::fmt::Display for ExpectedArgType {
 
 #[derive(thiserror::Error, Debug)]
 pub enum AsmError {
+    #[error("undefined variable")]
+    UndefinedVariable(ast::Span),
+    #[error("redefined variable")]
+    RedefinedVariable(ast::Span),
+    #[error("invalid statement")]
+    InvalidStatement(ast::Span),
     #[error("unknown opcode: {name}")]
     UnknownOpcode { name: Box<str>, span: ast::Span },
     #[error("unaligned continuation of {bits} bits")]
@@ -201,18 +212,18 @@ pub enum AsmError {
 
 impl AsmError {
     pub fn can_ignore(&self) -> bool {
-        matches!(
-            self,
-            Self::ArgTypeMismatch {
-                found: ArgType::Invalid,
-                ..
-            }
-        )
+        matches!(self, Self::ArgTypeMismatch {
+            found: ArgType::Invalid,
+            ..
+        })
     }
 
     pub fn span(&self) -> ast::Span {
         match self {
-            Self::UnknownOpcode { span, .. }
+            Self::UndefinedVariable(span)
+            | Self::RedefinedVariable(span)
+            | Self::InvalidStatement(span)
+            | Self::UnknownOpcode { span, .. }
             | Self::UnalignedCont { span, .. }
             | Self::ArgTypeMismatch { span, .. }
             | Self::InvalidRegister(span)

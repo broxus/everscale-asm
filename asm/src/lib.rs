@@ -1,7 +1,6 @@
-use everscale_types::prelude::*;
-
 pub use asm::{ArgType, AsmError, ExpectedArgType};
 pub use ast::{ParserError, Span};
+use everscale_types::prelude::*;
 
 mod asm;
 mod ast;
@@ -145,10 +144,11 @@ mod tests {
         assert_eq!(cell_byte.data(), &[0x80, 120]);
 
         let cell_short = Code::assemble("INT 16000")?;
-        assert_eq!(
-            cell_short.data(),
-            &[0x81, ((16000 >> 8) & 0xff) as u8, ((16000) & 0xff) as u8]
-        );
+        assert_eq!(cell_short.data(), &[
+            0x81,
+            ((16000 >> 8) & 0xff) as u8,
+            ((16000) & 0xff) as u8
+        ]);
 
         let cell_big = Code::assemble("INT 123123123123123123")?;
         assert_eq!(cell_big.data(), hex::decode("8229b56bd40163f3b3")?);
@@ -181,10 +181,11 @@ mod tests {
         assert_eq!(cell_byte.data(), &[0x80, 120]);
 
         let cell_short = Code::assemble("INTX 16000")?;
-        assert_eq!(
-            cell_short.data(),
-            &[0x81, ((16000 >> 8) & 0xff) as u8, ((16000) & 0xff) as u8]
-        );
+        assert_eq!(cell_short.data(), &[
+            0x81,
+            ((16000 >> 8) & 0xff) as u8,
+            ((16000) & 0xff) as u8
+        ]);
 
         let cell_big = Code::assemble("INTX 123123123123123123")?;
         assert_eq!(cell_big.data(), hex::decode("8229b56bd40163f3b3")?);

@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use chumsky::prelude::*;
-use chumsky::text::TextExpected;
+use chumsky::text::{Char, TextExpected};
 use chumsky::util::MaybeRef;
 use chumsky::DefaultExpected;
 use everscale_types::boc::Boc;
@@ -157,22 +157,27 @@ pub enum InstrArgValue<'a> {
 type ParserExtra = extra::Full<ParserError, (), ()>;
 
 fn parser<'a>() -> impl Parser<'a, &'a str, Code<'a>, ParserExtra> {
-    stmt()
-        .recover_with(skip_then_retry_until(any().ignored(), text::newline()))
-        .padded()
-        .repeated()
-        .collect()
-        .map_with(|items, e| Code {
-            span: e.span(),
-            items,
-        })
+    let whitespace_or_comments = whitespace_or_comments();
+
+    whitespace_or_comments.ignore_then(
+        stmt()
+            .recover_with(skip_then_retry_until(any().ignored(), text::newline()))
+            .padded_by(whitespace_or_comments)
+            .repeated()
+            .collect()
+            .map_with(|items, e| Code {
+                span: e.span(),
+                items,
+            }),
+    )
 }
 
 fn stmt<'a>() -> impl Parser<'a, &'a str, Stmt<'a>, ParserExtra> {
     recursive(|stmt| {
+        let whitespace_or_comment = whitespace_or_comments();
+
         let inline = just("@inline")
-            .padded_by(comment().repeated())
-            .padded()
+            .padded_by(whitespace_or_comment)
             .ignore_then(instr_arg(stmt.clone()))
             .map_with(|value, e| {
                 Stmt::Inline(Inline {
@@ -182,8 +187,7 @@ fn stmt<'a>() -> impl Parser<'a, &'a str, Stmt<'a>, ParserExtra> {
             });
 
         let jumpref = just("@newcell")
-            .padded_by(comment().repeated())
-            .padded()
+            .padded_by(whitespace_or_comment)
             .map_with(|_, e| Stmt::NewCell(NewCell { span: e.span() }));
 
         let define = define(stmt.clone()).map_with(|define, e| match define {
@@ -200,10 +204,6 @@ fn stmt<'a>() -> impl Parser<'a, &'a str, Stmt<'a>, ParserExtra> {
 fn define<'a>(
     stmt: Recursive<dyn Parser<'a, &'a str, Stmt<'a>, ParserExtra> + 'a>,
 ) -> impl Parser<'a, &'a str, Option<Define<'a>>, ParserExtra> + Clone {
-    let until_next_arg_or_eof = any()
-        .filter(|&c: &char| c != '}' && c != ')' && c != ',' && !c.is_whitespace())
-        .repeated();
-
     just("@define(")
         .ignore_then(
             none_of(")")
@@ -216,11 +216,10 @@ fn define<'a>(
                         inner: e.into(),
                     }),
                 })
-                .recover_with(via_parser(until_next_arg_or_eof.map(|_| None))),
+                .recover_with(via_parser(until_next_arg_or_whitespace().map(|_| None))),
         )
-        .then_ignore(just(')').padded())
-        .padded_by(comment().repeated())
-        .padded()
+        .then_ignore(just(')'))
+        .padded_by(whitespace_or_comments())
         .then(instr_arg(stmt.clone()))
         .map_with(|(name, value), e| {
             name.map(|name| Define {
@@ -243,24 +242,20 @@ fn instr<'a>(
         res
     }
 
-    let comment = comment();
+    let whitespace_or_comment = whitespace_or_comments();
 
     let args = instr_arg(stmt)
-        .separated_by(
-            just(',')
-                .padded_by(comment.clone().repeated())
-                .padded()
-                .recover_with(skip_then_retry_until(
-                    any().ignored(),
-                    choice((just(',').ignored(), text::newline())),
-                )),
-        )
+        .separated_by(just(',').padded_by(whitespace_or_comment).recover_with(
+            skip_then_retry_until(
+                any().ignored(),
+                choice((just(',').ignored(), text::newline())),
+            ),
+        ))
         .collect::<Vec<_>>();
 
     instr_ident()
         .map_with(|ident, e| (ident, e.span()))
-        .padded_by(comment.repeated())
-        .padded()
+        .padded_by(whitespace_or_comment)
         .then(args)
         .map(|((ident, ident_span), args)| Instr {
             span: compute_min_span(ident_span, &args),
@@ -274,7 +269,11 @@ fn instr_arg<'a>(
     stmt: Recursive<dyn Parser<'a, &'a str, Stmt<'a>, ParserExtra> + 'a>,
 ) -> impl Parser<'a, &'a str, InstrArg<'a>, ParserExtra> + Clone {
     choice((
-        nat().map(InstrArgValue::Nat),
+        nat().map(|value| {
+            value
+                .map(InstrArgValue::Nat)
+                .unwrap_or(InstrArgValue::Invalid)
+        }),
         just("@method")
             .rewind()
             .ignore_then(method_id().map(|value| {
@@ -317,17 +316,8 @@ fn instr_arg<'a>(
     })
 }
 
-fn comment<'a>() -> impl Parser<'a, &'a str, (), ParserExtra> + Clone {
-    just("//")
-        .then(any().and_is(text::newline().not()).repeated())
-        .padded()
-        .ignored()
-}
-
 fn instr_ident<'a>() -> impl Parser<'a, &'a str, &'a str, ParserExtra> + Clone {
-    any()
-        .filter(|&c: &char| !c.is_whitespace() && c != ',' && c != '}' && c != '{')
-        .repeated()
+    until_next_arg_or_whitespace()
         .at_least(1)
         .to_slice()
         .validate(|ident: &str, e, emitter| {
@@ -378,7 +368,7 @@ fn instr_ident<'a>() -> impl Parser<'a, &'a str, &'a str, ParserExtra> + Clone {
         })
 }
 
-fn nat<'a>() -> impl Parser<'a, &'a str, BigInt, ParserExtra> + Clone {
+fn nat<'a>() -> impl Parser<'a, &'a str, Option<BigInt>, ParserExtra> + Clone {
     fn parse_int(mut s: &str, radix: u32, span: Span) -> Result<BigInt, ParserError> {
         if !s.is_empty() {
             s = s.trim_start_matches('0');
@@ -393,41 +383,59 @@ fn nat<'a>() -> impl Parser<'a, &'a str, BigInt, ParserExtra> + Clone {
         }
     }
 
-    let num_slice = any()
-        .filter(|&c: &char| !c.is_whitespace() && c != ',' && c != '}' && c != '{')
-        .repeated()
-        .at_least(1)
-        .to_slice();
+    let num_slice = until_next_arg_or_whitespace().at_least(1).to_slice();
+
+    let after_decimal = choice((
+        end(),
+        any()
+            .filter(|c: &char| c.is_whitespace() || ",{}[]/".contains(*c))
+            .ignored(),
+    ))
+    .rewind();
 
     let number = choice((
-        just("0x")
-            .ignore_then(num_slice)
-            .try_map(|s, span| parse_int(s, 16, span)),
-        just("0b")
-            .ignore_then(num_slice)
-            .try_map(|s, span| parse_int(s, 2, span)),
+        just("0x").ignore_then(num_slice).validate(|s, e, emitter| {
+            match parse_int(s, 16, e.span()) {
+                Ok(res) => Some(res),
+                Err(e) => {
+                    emitter.emit(e);
+                    None
+                }
+            }
+        }),
+        just("0b").ignore_then(num_slice).validate(|s, e, emitter| {
+            match parse_int(s, 2, e.span()) {
+                Ok(res) => Some(res),
+                Err(e) => {
+                    emitter.emit(e);
+                    None
+                }
+            }
+        }),
         any()
             .filter(|c: &char| c.is_ascii_digit())
-            .rewind()
-            .ignore_then(num_slice.try_map(|s, span| parse_int(s, 10, span))),
+            .repeated()
+            .at_least(1)
+            .to_slice()
+            .then_ignore(after_decimal)
+            .validate(|s, e, emitter| match parse_int(s, 10, e.span()) {
+                Ok(res) => Some(res),
+                Err(e) => {
+                    emitter.emit(e);
+                    None
+                }
+            }),
     ));
 
     choice((
-        just('-').ignore_then(number).map(std::ops::Neg::neg),
+        just('-')
+            .ignore_then(number)
+            .map(|value| value.map(std::ops::Neg::neg)),
         number,
     ))
-    .then_ignore(empty().and_is(choice((
-        end(),
-        text::whitespace().at_least(1),
-        one_of(",{}[]").ignored(),
-    ))))
 }
 
 fn stack_register<'a>() -> impl Parser<'a, &'a str, Option<i16>, ParserExtra> + Clone {
-    let until_next_arg = any()
-        .filter(|&c: &char| c != ',' && !c.is_whitespace())
-        .repeated();
-
     let until_eof_or_paren = none_of(")\n").repeated().then(just(')').or_not());
 
     let idx = text::int::<_, ParserExtra>(10).try_map(|s, span| match i16::from_str(s) {
@@ -449,15 +457,11 @@ fn stack_register<'a>() -> impl Parser<'a, &'a str, Option<i16>, ParserExtra> + 
             ),
             idx.map(Some),
         ))
-        .recover_with(via_parser(until_next_arg.map(|_| None))),
+        .recover_with(via_parser(until_next_arg_or_whitespace().map(|_| None))),
     )
 }
 
 fn control_register<'a>() -> impl Parser<'a, &'a str, Option<u8>, ParserExtra> + Clone {
-    let recovery = any()
-        .filter(|&c: &char| c != ',' && !c.is_whitespace())
-        .repeated();
-
     let idx = text::int::<_, ParserExtra>(10)
         .try_map(|s, span| match u8::from_str(s) {
             Ok(n) if (0..=5).contains(&n) || n == 7 => Ok(Some(n)),
@@ -470,7 +474,7 @@ fn control_register<'a>() -> impl Parser<'a, &'a str, Option<u8>, ParserExtra> +
                 inner: e.into(),
             }),
         })
-        .recover_with(via_parser(recovery.map(|_| None)));
+        .recover_with(via_parser(until_next_arg_or_whitespace().map(|_| None)));
 
     just('c').ignore_then(idx)
 }
@@ -491,7 +495,11 @@ fn jump_table<'a>(
     stmt: Recursive<dyn Parser<'a, &'a str, Stmt<'a>, ParserExtra> + 'a>,
 ) -> impl Parser<'a, &'a str, JumpTable<'a>, ParserExtra> + Clone {
     let key = choice((
-        nat().map(JumpTableItemKeyData::Nat),
+        nat().map(|value| {
+            value
+                .map(JumpTableItemKeyData::Nat)
+                .unwrap_or(JumpTableItemKeyData::Invalid)
+        }),
         just("@method")
             .rewind()
             .ignore_then(method_id().map(|value| {
@@ -569,13 +577,12 @@ fn library_cell<'a>() -> impl Parser<'a, &'a str, Option<Cell>, ParserExtra> + C
 }
 
 fn raw_cell<'a>() -> impl Parser<'a, &'a str, Option<Cell>, ParserExtra> + Clone {
-    let content_recovery = any()
-        .filter(|&c: &char| c != '}' && !c.is_whitespace())
-        .repeated();
-
     just("te6ccg").rewind().ignore_then(
         any()
-            .filter(|&c: &char| c != '}' && !c.is_whitespace())
+            .filter(|&c: &char| match c {
+                '{' | '}' | '(' | ')' | ',' => false,
+                _ => !c.is_whitespace(),
+            })
             .repeated()
             .to_slice()
             .try_map(move |s, span| match parse_cell_boc(s) {
@@ -585,14 +592,12 @@ fn raw_cell<'a>() -> impl Parser<'a, &'a str, Option<Cell>, ParserExtra> + Clone
                     inner: e.into(),
                 }),
             })
-            .recover_with(via_parser(content_recovery.map(|_| None))),
+            .recover_with(via_parser(until_next_arg_or_whitespace().map(|_| None))),
     )
 }
 
 fn method_id<'a>() -> impl Parser<'a, &'a str, Option<MethodId<'a>>, ParserExtra> + Clone {
-    let until_next_arg_or_eof = any()
-        .filter(|&c: &char| c != '}' && c != ')' && c != ',' && !c.is_whitespace())
-        .repeated();
+    let until_next_arg_or_whitespace = until_next_arg_or_whitespace();
 
     just("@method(")
         .ignore_then(
@@ -613,7 +618,7 @@ fn method_id<'a>() -> impl Parser<'a, &'a str, Option<MethodId<'a>>, ParserExtra
                         inner: e.into(),
                     }),
                 })
-                .recover_with(via_parser(until_next_arg_or_eof.map(|_| None))),
+                .recover_with(via_parser(until_next_arg_or_whitespace.map(|_| None))),
         )
         .then_ignore(just(')'))
         .map_with(|value, e| {
@@ -622,13 +627,11 @@ fn method_id<'a>() -> impl Parser<'a, &'a str, Option<MethodId<'a>>, ParserExtra
                 value,
             })
         })
-        .recover_with(via_parser(until_next_arg_or_eof.map(|_| None)))
+        .recover_with(via_parser(until_next_arg_or_whitespace.map(|_| None)))
 }
 
 fn r#use<'a>() -> impl Parser<'a, &'a str, Option<Use<'a>>, ParserExtra> + Clone {
-    let until_next_arg_or_eof = any()
-        .filter(|&c: &char| c != '}' && c != ')' && c != ',' && !c.is_whitespace())
-        .repeated();
+    let until_next_arg_or_eof = until_next_arg_or_whitespace();
 
     just("@use(")
         .ignore_then(
@@ -656,7 +659,10 @@ fn r#use<'a>() -> impl Parser<'a, &'a str, Option<Use<'a>>, ParserExtra> + Clone
 
 fn cell_slice<'a>() -> impl Parser<'a, &'a str, Option<Cell>, ParserExtra> + Clone {
     let content_recovery = any()
-        .filter(|&c: &char| c != '}' && !c.is_whitespace())
+        .filter(|&c: &char| match c {
+            '}' | '/' => false,
+            _ => !c.is_whitespace(),
+        })
         .repeated();
 
     let braces_recovery = none_of("}\n").repeated().then(just('}').or_not());
@@ -695,6 +701,30 @@ fn cell_slice<'a>() -> impl Parser<'a, &'a str, Option<Cell>, ParserExtra> + Clo
         make_slice_parser("x{", parse_hex_slice),
         make_slice_parser("b{", parse_bin_slice),
     ))
+}
+
+fn whitespace_or_comments<'a>() -> impl Parser<'a, &'a str, (), ParserExtra> + Copy {
+    choice((
+        any().filter(|c: &char| c.is_whitespace()).ignored(),
+        just("//")
+            .then(any().filter(|c: &char| !c.is_newline()).repeated())
+            .ignored(),
+    ))
+    .repeated()
+}
+
+fn until_next_arg_or_whitespace<'a>() -> chumsky::combinator::Repeated<
+    impl Parser<'a, &'a str, char, ParserExtra> + Copy,
+    char,
+    &'a str,
+    ParserExtra,
+> {
+    any()
+        .filter(|&c: &char| match c {
+            '{' | '}' | '(' | ')' | ',' | '/' => false,
+            _ => !c.is_whitespace(),
+        })
+        .repeated()
 }
 
 fn parse_hex_slice(s: &str) -> Result<Cell, SliceError> {

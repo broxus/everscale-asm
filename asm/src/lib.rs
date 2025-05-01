@@ -1,6 +1,7 @@
-pub use asm::{ArgType, AsmError, ExpectedArgType};
-pub use ast::{ParserError, Span};
 use everscale_types::prelude::*;
+
+pub use crate::asm::{ArgType, AsmError, ExpectedArgType};
+pub use crate::ast::{ParserError, Span};
 
 mod asm;
 mod ast;
@@ -328,5 +329,30 @@ mod tests {
             Boc::decode_base64("te6ccgEBBAEAHgABFP8A9KQT9LzyyAsBAgLOAwIABaNUQAAJ0IPAWpI=")?;
         assert_eq!(code, expected);
         Ok(())
+    }
+
+    #[test]
+    fn invalid_input() {
+        Code::assemble(
+            r#"
+              ccf21d3ec00b
+
+
+              CHKNAN_BOUNCE   CHKBIT         0                                ///////////////////////OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO//                                              0                                                                              //////////////////// //////////                    OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO//                                              0                                                                              //////////////////// //////////                                               /////////////                                                                                         CAL                           /////////////                                                                                         CALDILC    T        / LDILE7
+              "#,
+        ).unwrap_err();
+    }
+
+    #[test]
+    fn only_comments() {
+        let code = Code::assemble(
+            r#"
+              // TEST
+              // ASD
+              "#,
+        )
+        .unwrap();
+
+        assert_eq!(code, Cell::empty_cell());
     }
 }

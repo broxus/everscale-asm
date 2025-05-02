@@ -1749,7 +1749,10 @@ fn op_subconst<'s>(
     instr: &ast::Instr<'s>,
     scope: &mut Scope<'_, 's>,
 ) -> Result<(), AsmError> {
-    let NatI8(s1) = instr.parse_args(scope)?;
+    let WithSpan(NatI8(s1), span) = instr.parse_args(scope)?;
+    if s1 == i8::MIN {
+        return Err(AsmError::OutOfRange(span));
+    }
     write_op_1sr_l(ctx, 0xa6, 8, -s1 as u8).with_span(instr.span)
 }
 

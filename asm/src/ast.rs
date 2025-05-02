@@ -161,7 +161,12 @@ fn parser<'a>() -> impl Parser<'a, &'a str, Code<'a>, ParserExtra> {
 
     whitespace_or_comments.ignore_then(
         stmt()
-            .recover_with(skip_then_retry_until(any().ignored(), text::newline()))
+            .recover_with(via_parser(
+                any()
+                    .filter(|c: &char| !c.is_whitespace())
+                    .ignore_then(choice((any().ignored(), end())))
+                    .map_with(|_, e| Stmt::Invalid(e.span())),
+            ))
             .padded_by(whitespace_or_comments)
             .repeated()
             .collect()
@@ -245,12 +250,7 @@ fn instr<'a>(
     let whitespace_or_comment = whitespace_or_comments();
 
     let args = instr_arg(stmt)
-        .separated_by(just(',').padded_by(whitespace_or_comment).recover_with(
-            skip_then_retry_until(
-                any().ignored(),
-                choice((just(',').ignored(), text::newline())),
-            ),
-        ))
+        .separated_by(just(',').padded_by(whitespace_or_comment))
         .collect::<Vec<_>>();
 
     instr_ident()
@@ -377,6 +377,17 @@ fn nat<'a>() -> impl Parser<'a, &'a str, Option<BigInt>, ParserExtra> + Clone {
             }
         }
 
+        let in_range = match radix {
+            2 => s.len() <= 256,
+            10 => s.len() <= 78,
+            16 => s.len() <= 64,
+            _ => return Err(ParserError::UnknownError),
+        };
+
+        if !in_range {
+            return Err(ParserError::TooBigInteger { span });
+        }
+
         match BigInt::from_str_radix(s, radix) {
             Ok(n) => Ok(n),
             Err(e) => Err(ParserError::InvalidInt { span, inner: e }),
@@ -385,13 +396,8 @@ fn nat<'a>() -> impl Parser<'a, &'a str, Option<BigInt>, ParserExtra> + Clone {
 
     let num_slice = until_next_arg_or_whitespace().at_least(1).to_slice();
 
-    let after_decimal = choice((
-        end(),
-        any()
-            .filter(|c: &char| c.is_whitespace() || ",{}[]/".contains(*c))
-            .ignored(),
-    ))
-    .rewind();
+    let after_decimal =
+        choice((end(), any().filter(|c: &char| !c.is_alphabetic()).ignored())).rewind();
 
     let number = choice((
         just("0x").ignore_then(num_slice).validate(|s, e, emitter| {
@@ -542,37 +548,30 @@ fn jump_table<'a>(
 }
 
 fn library_cell<'a>() -> impl Parser<'a, &'a str, Option<Cell>, ParserExtra> + Clone {
-    let content_recovery = any()
-        .filter(|&c: &char| c != '}' && !c.is_whitespace())
-        .repeated();
-
-    let braces_recovery = none_of("}\n").repeated().then(just('}').or_not());
-
     just("@{")
-        .ignore_then(
-            any()
-                .filter(|&c: &char| c != '}' && !c.is_whitespace())
-                .repeated()
-                .to_slice()
-                .try_map(move |s, span| match parse_library_ref(s) {
-                    Ok(lib) => Ok(Some(lib)),
-                    Err(e) => Err(ParserError::InvalidLibrary {
-                        span,
-                        inner: e.into(),
-                    }),
-                })
-                .recover_with(via_parser(content_recovery.map(|_| None))),
-        )
-        .then(
-            just('}')
-                .map(|_| true)
-                .recover_with(via_parser(braces_recovery.map(|_| false))),
-        )
-        .map(|(mut t, valid)| {
-            if !valid {
-                t = None;
+        .ignore_then(any().filter(|&c: &char| c != '}').repeated().to_slice())
+        .then(choice((
+            just('}').map_with(|_, e| (true, e.span())),
+            end().map_with(|_, e| (false, e.span())),
+        )))
+        .validate(|(s, (terminated, end_span)), e, emitter| {
+            if !terminated {
+                emitter.emit(ParserError::ExpectedFound {
+                    span: end_span,
+                    found: None,
+                });
+                return None;
             }
-            t
+            match parse_library_ref(s) {
+                Ok(lib) => Some(lib),
+                Err(err) => {
+                    emitter.emit(ParserError::InvalidLibrary {
+                        span: e.span(),
+                        inner: err.into(),
+                    });
+                    None
+                }
+            }
         })
 }
 
@@ -721,7 +720,7 @@ fn until_next_arg_or_whitespace<'a>() -> chumsky::combinator::Repeated<
 > {
     any()
         .filter(|&c: &char| match c {
-            '{' | '}' | '(' | ')' | ',' | '/' => false,
+            '{' | '}' | '(' | ')' | ',' | '/' | '@' => false,
             _ => !c.is_whitespace(),
         })
         .repeated()
@@ -859,6 +858,8 @@ pub enum ParserError {
         span: Span,
         inner: num_bigint::ParseBigIntError,
     },
+    #[error("too big integer")]
+    TooBigInteger { span: Span },
     #[error("invalid stack register: {inner}")]
     InvalidStackRegister { span: Span, inner: anyhow::Error },
     #[error("invalid control register: {inner}")]
@@ -882,6 +883,7 @@ impl ParserError {
         match self {
             Self::ExpectedFound { span, .. }
             | Self::InvalidInt { span, .. }
+            | Self::TooBigInteger { span }
             | Self::InvalidStackRegister { span, .. }
             | Self::InvalidControlRegister { span, .. }
             | Self::InvalidSlice { span, .. }

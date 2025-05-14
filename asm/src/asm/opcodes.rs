@@ -1169,8 +1169,10 @@ fn register_stackops(t: &mut Opcodes) {
 
         "GETEXTRABALANCE" => 0xf880,
 
+        "GETPARAMLONG" => 0xf881(u8),
         "INMSGPARAMS" => 0xf88111,
 
+        "INMSGPARAM" => 0xf89(u4),
         "INMSG_BOUNCE" => 0xf890,
         "INMSG_BOUNCED" => 0xf891,
         "INMSG_SRC" => 0xf892,

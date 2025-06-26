@@ -1,15 +1,15 @@
 use std::str::FromStr;
 
+use chumsky::DefaultExpected;
 use chumsky::prelude::*;
 use chumsky::text::{Char, TextExpected};
 use chumsky::util::MaybeRef;
-use chumsky::DefaultExpected;
-use everscale_types::boc::Boc;
-use everscale_types::cell::{CellType, HashBytes};
-use everscale_types::crc::crc_16;
-use everscale_types::prelude::{Cell, CellBuilder};
 use num_bigint::BigInt;
 use num_traits::Num;
+use tycho_types::boc::Boc;
+use tycho_types::cell::{CellType, HashBytes};
+use tycho_types::crc::crc_16;
+use tycho_types::prelude::{Cell, CellBuilder};
 
 pub type Span = SimpleSpan<usize>;
 
@@ -785,7 +785,7 @@ fn parse_hex_slice(s: &str) -> Result<Cell, SliceError> {
 }
 
 fn parse_bin_slice(s: &str) -> Result<Cell, SliceError> {
-    use everscale_types::cell::MAX_BIT_LEN;
+    use tycho_types::cell::MAX_BIT_LEN;
 
     let mut bits = 0;
     let mut bytes = [0; 128];
@@ -915,12 +915,12 @@ enum SliceError {
     #[error("bitstring is too long")]
     TooLong,
     #[error("cell build error: {0}")]
-    CellError(#[from] everscale_types::error::Error),
+    CellError(#[from] tycho_types::error::Error),
 }
 
 #[derive(thiserror::Error, Debug)]
 #[error("invalid cell BOC: {0}")]
-struct CellError(#[from] everscale_types::boc::de::Error);
+struct CellError(#[from] tycho_types::boc::de::Error);
 
 #[derive(thiserror::Error, Debug)]
 pub enum NameError {
@@ -935,9 +935,9 @@ pub enum NameError {
 #[derive(thiserror::Error, Debug)]
 enum LibraryError {
     #[error("invalid hash: {0}")]
-    InvalidHexFull(#[from] everscale_types::error::ParseHashBytesError),
+    InvalidHexFull(#[from] tycho_types::error::ParseHashBytesError),
     #[error("cell build error: {0}")]
-    CellError(#[from] everscale_types::error::Error),
+    CellError(#[from] tycho_types::error::Error),
 }
 
 impl<'a> chumsky::error::LabelError<'a, &'a str, MaybeRef<'a, char>> for ParserError {

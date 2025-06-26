@@ -1,20 +1,13 @@
-# everscale-asm &emsp; [![crates-io-batch]][crates-io-link] [![docs-badge]][docs-url] [![rust-version-badge]][rust-version-link] [![workflow-badge]][workflow-link]
+# tycho-asm &emsp; [![crates-io-batch]][crates-io-link] [![docs-badge]][docs-url] [![rust-version-badge]][rust-version-link] [![workflow-badge]][workflow-link]
 
-[crates-io-batch]: https://img.shields.io/crates/v/everscale-asm.svg
-
-[crates-io-link]: https://crates.io/crates/everscale-asm
-
-[docs-badge]: https://docs.rs/everscale-asm/badge.svg
-
-[docs-url]: https://docs.rs/everscale-asm
-
-[rust-version-badge]: https://img.shields.io/badge/rustc-1.70+-lightgray.svg
-
-[rust-version-link]: https://blog.rust-lang.org/2023/06/01/Rust-1.70.0.html
-
-[workflow-badge]: https://img.shields.io/github/actions/workflow/status/broxus/everscale-asm/master.yaml?branch=master
-
-[workflow-link]: https://github.com/broxus/everscale-asm/actions?query=workflow%3Amaster
+[crates-io-batch]: https://img.shields.io/crates/v/tycho-asm.svg
+[crates-io-link]: https://crates.io/crates/tycho-asm
+[docs-badge]: https://docs.rs/tycho-asm/badge.svg
+[docs-url]: https://docs.rs/tycho-asm
+[rust-version-badge]: https://img.shields.io/badge/rustc-1.85+-lightgray.svg
+[rust-version-link]: https://blog.rust-lang.org/2025/02/20/Rust-1.85.0/
+[workflow-badge]: https://img.shields.io/github/actions/workflow/status/broxus/tycho-asm/master.yaml?branch=master
+[workflow-link]: https://github.com/broxus/tycho-asm/actions?query=workflow%3Amaster
 
 > Status: WIP
 
@@ -48,8 +41,8 @@ Unique bits:    888
 
 Runtime:
 ```rust
-use everscale_asm::Code;
-use everscale_types::prelude::Cell;
+use tycho_asm::Code;
+use tycho_types::prelude::Cell;
 
 let code: Cell = Code::assemble(r#"
     PUSHINT 1
@@ -67,8 +60,8 @@ let code: Cell = Code::assemble(r#"
 
 Compile time:
 ```rust
-use everscale_asm_macros::tvmasm;
-use everscale_types::prelude::{Boc, Cell};
+use tycho_asm_macros::tvmasm;
+use tycho_types::prelude::{Boc, Cell};
 
 const CODE: &[u8] = tvmasm!(
     "PUSHINT 1",

@@ -3,11 +3,11 @@ use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 
-use everscale_asm::Code;
-use everscale_types::boc::Boc;
 use proc_macro::TokenStream;
-use quote::{quote, ToTokens};
+use quote::{ToTokens, quote};
 use syn::punctuated::Punctuated;
+use tycho_asm::Code;
+use tycho_types::boc::Boc;
 
 #[proc_macro]
 pub fn tvmasm(input: TokenStream) -> TokenStream {
@@ -87,7 +87,7 @@ fn compile_file(input: &syn::LitStr) -> Result<proc_macro2::TokenStream, Vec<syn
             return Err(vec![syn::Error::new_spanned(
                 input.into_token_stream(),
                 format!("error opening {:?}: {e:?}", full_path),
-            )])
+            )]);
         }
     };
 
@@ -144,7 +144,7 @@ impl<'a> Source<'a> {
         Self { text, parts }
     }
 
-    fn find_lit_by_span(&self, span: everscale_asm::Span) -> Option<&syn::LitStr> {
+    fn find_lit_by_span(&self, span: tycho_asm::Span) -> Option<&syn::LitStr> {
         let mut offset = 0;
         for (part, part_len) in &self.parts {
             offset += part_len;
@@ -182,19 +182,19 @@ impl Ctxt {
     }
 }
 
-fn visit_asm_errors<F>(errors: &[everscale_asm::AsmError], mut f: F)
+fn visit_asm_errors<F>(errors: &[tycho_asm::AsmError], mut f: F)
 where
-    F: FnMut(&everscale_asm::AsmError),
+    F: FnMut(&tycho_asm::AsmError),
 {
-    fn visit_asm_errors_impl<F>(errors: &[everscale_asm::AsmError], f: &mut F)
+    fn visit_asm_errors_impl<F>(errors: &[tycho_asm::AsmError], f: &mut F)
     where
-        F: FnMut(&everscale_asm::AsmError),
+        F: FnMut(&tycho_asm::AsmError),
     {
         for error in errors {
             match error {
-                everscale_asm::AsmError::Multiple(errors) => visit_asm_errors_impl(errors, f),
-                everscale_asm::AsmError::ArgTypeMismatch {
-                    found: everscale_asm::ArgType::Invalid,
+                tycho_asm::AsmError::Multiple(errors) => visit_asm_errors_impl(errors, f),
+                tycho_asm::AsmError::ArgTypeMismatch {
+                    found: tycho_asm::ArgType::Invalid,
                     ..
                 } => continue,
                 _ => f(error),

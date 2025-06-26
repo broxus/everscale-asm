@@ -4,20 +4,20 @@
   "description": "Language client extension for TVM Assembler",
   "publisher": "Rexagon",
   "license": "MIT",
-  "homepage": "https://github.com/broxus/everscale-asm/blob/master/README.md",
-  "version": "0.0.3",
+  "homepage": "https://github.com/broxus/tycho-asm/blob/master/README.md",
+  "version": "0.1.0",
   "engines": {
     "vscode": "^1.65.0"
   },
   "repository": {
-    "url": "https://github.com/broxus/everscale-asm"
+    "url": "https://github.com/broxus/tycho-asm"
   },
   "scripts": {
-    "vscode:prepublish": "npm run esbuild-base -- --minify",
-    "vscode:build": "npm run vscode:prepublish && vsce package",
+    "vscode:prepublish": "bun run esbuild-base -- --minify",
+    "vscode:build": "bun run vscode:prepublish && vsce package",
     "esbuild-base": "esbuild ./src/extension.ts --bundle --outfile=out/main.js --external:vscode --format=cjs --platform=node",
-    "esbuild": "npm run esbuild-base -- --sourcemap",
-    "esbuild-watch": "npm run esbuild-base -- --sourcemap --watch"
+    "esbuild": "bun run esbuild-base -- --sourcemap",
+    "esbuild-watch": "bun run esbuild-base -- --sourcemap --watch"
   },
   "main": "./out/main.js",
   "contributes": {

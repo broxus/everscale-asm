@@ -1,7 +1,7 @@
 use either::Either;
-use everscale_types::prelude::*;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
+use tycho_types::prelude::*;
 
 use super::{ArgType, JoinResults, Scope};
 use crate::asm::AsmError;
@@ -467,7 +467,7 @@ impl<'c, 's> FromInstrArg<'c, 's> for SliceOrCont<'c, 's> {
                     span: arg.span,
                     expected: ArgType::Slice.expected_or(ArgType::Block),
                     found: arg.value.ty(),
-                })
+                });
             }
         }))
     }

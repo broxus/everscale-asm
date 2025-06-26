@@ -2,9 +2,9 @@ mod opcodes;
 mod util;
 
 use chumsky::span::Span;
-use everscale_types::prelude::*;
+use tycho_types::prelude::*;
 
-use self::opcodes::{cp0, Context, Scope};
+use self::opcodes::{Context, Scope, cp0};
 use crate::ast;
 
 pub fn assemble(ast: &[ast::Stmt], span: ast::Span) -> Result<Cell, AsmError> {
@@ -203,7 +203,7 @@ pub enum AsmError {
     },
     #[error("store error: {inner}")]
     StoreError {
-        inner: everscale_types::error::Error,
+        inner: tycho_types::error::Error,
         span: ast::Span,
     },
     #[error("multiple: {0:?}")]

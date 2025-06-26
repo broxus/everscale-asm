@@ -1,6 +1,6 @@
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use anyhow::Context;
 use async_trait::async_trait;
@@ -282,7 +282,7 @@ impl BackendState {
         tracing::debug!(%path, "compiling contract");
 
         let source = Source::new(self.read_file(path)?);
-        let code = everscale_asm::Code::parse(&source.text);
+        let code = tycho_asm::Code::parse(&source.text);
         tracing::debug!(errors = code.parser_errors().len(), "compiling finished");
 
         let mut diagnostics = self.parser_error_to_diagnostic(path, &source, code.parser_errors());
@@ -299,7 +299,7 @@ impl BackendState {
         &self,
         path: &Url,
         source: &Source,
-        errors: &[everscale_asm::ParserError],
+        errors: &[tycho_asm::ParserError],
     ) -> Vec<Diagnostic> {
         errors
             .iter()
@@ -337,12 +337,12 @@ impl BackendState {
         &self,
         path: &Url,
         source: &Source,
-        errors: &[everscale_asm::AsmError],
+        errors: &[tycho_asm::AsmError],
     ) -> Vec<Diagnostic> {
         errors
             .iter()
             .flat_map(|error| match error {
-                everscale_asm::AsmError::Multiple(inner) => Either::Left(inner.iter()),
+                tycho_asm::AsmError::Multiple(inner) => Either::Left(inner.iter()),
                 _ => Either::Right(std::iter::once(error)),
             })
             .map(|err| -> anyhow::Result<Diagnostic> {

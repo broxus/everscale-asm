@@ -1,6 +1,6 @@
 [package]
 name = "tvmasm"
-version = "0.0.10"
+version = "0.1.0"
 description = "CLI for TVM Assembler"
 include = ["src/**/*.rs", "src/**/*.tvm", "./LICENSE-*", "./README.md"]
 edition.workspace = true
@@ -21,7 +21,7 @@ tokio = { workspace = true }
 tower-lsp = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+tycho-types = { workspace = true, features = ["sync"] }
 unicode-width = { workspace = true }
-everscale-types = { workspace = true, features = ["sync"] }
 
-everscale-asm = { path = "../asm", version = "0.0.10" }
+tycho-asm = { path = "../asm", version = "0.1.0" }

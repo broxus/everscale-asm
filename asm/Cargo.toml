@@ -1,6 +1,6 @@
 [package]
-name = "everscale-asm"
-version = "0.0.10"
+name = "tycho-asm"
+version = "0.1.0"
 description = "Rust implementation of TVM Assembler"
 include = ["src/**/*.rs", "src/**/*.tvm", "./LICENSE-*", "./README.md"]
 edition.workspace = true
@@ -14,8 +14,8 @@ anyhow = { workspace = true }
 base64 = { workspace = true }
 chumsky = { workspace = true }
 either = { workspace = true }
-everscale-types = { workspace = true, features = ["base64"] }
 hex = { workspace = true }
 num-bigint = { workspace = true }
 num-traits = { workspace = true }
 thiserror = { workspace = true }
+tycho-types = { workspace = true, features = ["base64"] }

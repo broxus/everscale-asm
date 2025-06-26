@@ -4,15 +4,15 @@ use std::sync::OnceLock;
 
 use ahash::HashMap;
 use either::Either;
-use everscale_types::cell::{MAX_BIT_LEN, MAX_REF_COUNT};
-use everscale_types::error::Error;
-use everscale_types::prelude::*;
 use num_bigint::{BigInt, Sign};
 use num_traits::{One, ToPrimitive};
+use tycho_types::cell::{MAX_BIT_LEN, MAX_REF_COUNT};
+use tycho_types::error::Error;
+use tycho_types::prelude::*;
 
 use super::{ArgType, JoinResults};
-use crate::asm::util::*;
 use crate::asm::AsmError;
+use crate::asm::util::*;
 use crate::ast;
 use crate::util::*;
 
@@ -1560,7 +1560,7 @@ fn op_pushpow2<'s>(
             return Err(AsmError::WrongUsage {
                 details: "use PUSHNAN instead of PUSHPOW2 256",
                 span,
-            })
+            });
         }
         _ => return Err(AsmError::OutOfRange(span)),
     }
@@ -2120,7 +2120,7 @@ fn op_dictpushconst<'s>(
     instr: &ast::Instr<'s>,
     scope: &mut Scope<'_, 's>,
 ) -> Result<(), AsmError> {
-    use everscale_types::dict;
+    use tycho_types::dict;
 
     let (NatU10(n), dict) = instr.parse_args::<(_, &ast::InstrArg<'_>)>(scope)?;
     let dict_span = dict.span;

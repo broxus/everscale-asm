@@ -1,7 +1,7 @@
 [workspace.package]
-edition = "2021"
-rust-version = "1.77.1"
-repository = "https://github.com/broxus/everscale-asm"
+edition = "2024"
+rust-version = "1.85"
+repository = "https://github.com/broxus/tycho-asm"
 license = "MIT OR Apache-2.0"
 
 [workspace]
@@ -16,7 +16,7 @@ async-trait = "0.1"
 base64 = "0.22.1"
 chumsky = "0.10.1"
 console = "0.15"
-dashmap = "5.5"
+dashmap = "6.1"
 either = "1.9"
 hex = "0.4"
 num-bigint = "0.4"
@@ -30,9 +30,6 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "io-st
 tower-lsp = "0.20"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-unicode-width = "0.1"
+unicode-width = "0.2"
 
-everscale-types = { version = "0.1.2", default-features = false }
-
-[patch.crates-io]
-everscale-types = { git = "https://github.com/broxus/everscale-types.git", rev = "9dcfe1aa2ebeca82428cc860267653ec8036725e" }
+tycho-types = { version = "0.2.0", default-features = false }

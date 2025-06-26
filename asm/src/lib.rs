@@ -1,4 +1,4 @@
-use everscale_types::prelude::*;
+use tycho_types::prelude::*;
 
 pub use crate::asm::{ArgType, AsmError, ExpectedArgType};
 pub use crate::ast::{ParserError, Span};

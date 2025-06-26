@@ -5,7 +5,7 @@ use std::process::ExitCode;
 use anyhow::{Context, Result};
 use argh::FromArgs;
 use console::style;
-use everscale_types::boc::Boc;
+use tycho_types::boc::Boc;
 use unicode_width::UnicodeWidthStr;
 
 use crate::util::*;
@@ -79,7 +79,7 @@ impl CmdBuild {
         };
         anyhow::ensure!(self.input != out, "Output file must not be an input file");
 
-        let parsed = everscale_asm::Code::parse(&code.text);
+        let parsed = tycho_asm::Code::parse(&code.text);
         if !parsed.parser_errors().is_empty() {
             for error in parsed.parser_errors() {
                 if let Some(error) = error.as_report(&self.input, &code) {
@@ -152,12 +152,12 @@ impl CmdLsp {
     }
 }
 
-fn print_asm_errors(path: &Path, code: &Source, errors: &[everscale_asm::AsmError]) {
+fn print_asm_errors(path: &Path, code: &Source, errors: &[tycho_asm::AsmError]) {
     for error in errors {
         match error {
-            everscale_asm::AsmError::Multiple(errors) => print_asm_errors(path, code, errors),
-            everscale_asm::AsmError::ArgTypeMismatch {
-                found: everscale_asm::ArgType::Invalid,
+            tycho_asm::AsmError::Multiple(errors) => print_asm_errors(path, code, errors),
+            tycho_asm::AsmError::ArgTypeMismatch {
+                found: tycho_asm::ArgType::Invalid,
                 ..
             } => continue,
             _ => {
@@ -173,7 +173,7 @@ trait AsReport {
     fn as_report<'a>(&'a self, path: &'a Path, code: &'a Source) -> Option<Report<'a>>;
 }
 
-impl AsReport for everscale_asm::ParserError {
+impl AsReport for tycho_asm::ParserError {
     fn as_report<'a>(&'a self, path: &'a Path, code: &'a Source) -> Option<Report<'a>> {
         let span = self.span()?;
         Some(Report {
@@ -187,7 +187,7 @@ impl AsReport for everscale_asm::ParserError {
     }
 }
 
-impl AsReport for everscale_asm::AsmError {
+impl AsReport for tycho_asm::AsmError {
     fn as_report<'a>(&'a self, path: &'a Path, code: &'a Source) -> Option<Report<'a>> {
         let span = self.span();
         Some(Report {

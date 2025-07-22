@@ -1219,6 +1219,8 @@ fn register_stackops(t: &mut Opcodes) {
         "SECP256K1_XONLY_PUBKEY_TWEAK_ADD" => 0xf913,
         "P256_CHKSIGNU" => 0xf914,
         "P256_CHKSIGNS" => 0xf915,
+        
+        "ED25519_CHKSIGN_EXT" => 0xf918(u8),
 
         "RIST255_FROMHASH" => 0xf920,
         "RIST255_VALIDATE" => 0xf921,

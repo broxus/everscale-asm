@@ -1,6 +1,6 @@
 [package]
 name = "tycho-asm-macros"
-version = "0.1.0"
+version = "0.1.1"
 description = "Macros for Rust implementation of TVM Assembler"
 include = ["src/**/*.rs", "src/**/*.tvm", "./LICENSE-*", "./README.md"]
 edition.workspace = true
@@ -17,4 +17,4 @@ quote = { workspace = true }
 syn = { workspace = true, features = ["parsing"] }
 tycho-types = { workspace = true }
 
-tycho-asm = { path = "../asm", version = "0.1.0" }
+tycho-asm = { path = "../asm", version = "0.1.1" }

@@ -86,7 +86,7 @@ fn compile_file(input: &syn::LitStr) -> Result<proc_macro2::TokenStream, Vec<syn
         Err(e) => {
             return Err(vec![syn::Error::new_spanned(
                 input.into_token_stream(),
-                format!("error opening {:?}: {e:?}", full_path),
+                format!("error opening {full_path:?}: {e:?}"),
             )]);
         }
     };

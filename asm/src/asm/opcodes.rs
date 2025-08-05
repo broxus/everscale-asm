@@ -741,6 +741,7 @@ fn register_stackops(t: &mut Opcodes) {
         "STZEROES" => 0xcf40,
         "STONES" => 0xcf41,
         "STSAME" => 0xcf42,
+        "BTOS" => 0xcf50,
         "STSLICECONST" => op_stsliceconst,
         "STZERO" => 0xcf81,
         "STONE" => 0xcf93,
@@ -1219,7 +1220,8 @@ fn register_stackops(t: &mut Opcodes) {
         "SECP256K1_XONLY_PUBKEY_TWEAK_ADD" => 0xf913,
         "P256_CHKSIGNU" => 0xf914,
         "P256_CHKSIGNS" => 0xf915,
-        
+        "HASHBU" => 0xf916,
+
         "ED25519_CHKSIGN_EXT" => 0xf918(u8),
 
         "RIST255_FROMHASH" => 0xf920,

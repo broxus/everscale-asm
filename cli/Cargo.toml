@@ -24,4 +24,4 @@ tracing-subscriber = { workspace = true }
 tycho-types = { workspace = true, features = ["sync"] }
 unicode-width = { workspace = true }
 
-tycho-asm = { path = "../asm", version = "0.1.0" }
+tycho-asm = { path = "../asm", version = "0.1.1" }
